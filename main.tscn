@@ -1,0 +1,42 @@
+[gd_scene format=3 uid="uid://dnnvbq1dubml1"]
+
+[ext_resource type="Script" uid="uid://bx3vo21cuj7pj" path="res://main.gd" id="1_ig7tw"]
+
+[sub_resource type="SphereMesh" id="SphereMesh_lts4m"]
+radius = 0.064
+height = 0.128
+
+[sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_cjouy"]
+
+[sub_resource type="Sky" id="Sky_oqsj0"]
+sky_material = SubResource("ProceduralSkyMaterial_cjouy")
+
+[sub_resource type="Environment" id="Environment_lts4m"]
+background_mode = 2
+sky = SubResource("Sky_oqsj0")
+
+[node name="Main" type="Node3D" unique_id=500145794]
+script = ExtResource("1_ig7tw")
+
+[node name="XROrigin3D" type="XROrigin3D" parent="." unique_id=1033207768]
+
+[node name="XRCamera3D" type="XRCamera3D" parent="XROrigin3D" unique_id=807774865]
+
+[node name="XRControllerLeft" type="XRController3D" parent="XROrigin3D" unique_id=130472835]
+tracker = &"left_hand"
+show_when_tracked = true
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="XROrigin3D/XRControllerLeft" unique_id=1905874081]
+mesh = SubResource("SphereMesh_lts4m")
+
+[node name="XRControllerRight" type="XRController3D" parent="XROrigin3D" unique_id=991621539]
+tracker = &"right_hand"
+show_when_tracked = true
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="XROrigin3D/XRControllerRight" unique_id=820950230]
+mesh = SubResource("SphereMesh_lts4m")
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="." unique_id=868570715]
+environment = SubResource("Environment_lts4m")
+
+[node name="StaticBody3D" type="StaticBody3D" parent="." unique_id=1222995564]
