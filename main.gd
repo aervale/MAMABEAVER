@@ -2,8 +2,9 @@ extends Node3D
 var xr_interface: OpenXRInterface
 
 ## Preferred refresh rate. Will fallback to what the headset reports
-@export var target_refresh_rate := 90.0
+@export var target_refresh_rate := 72.0
 
+## _ready() is called when the node is initialize
 func _ready() -> void:
 	xr_interface = XRServer.find_interface("OpenXR") as OpenXRInterface
 	if xr_interface == null:
@@ -16,7 +17,7 @@ func _ready() -> void:
 
 	print("[Main|INFO]: OpenXR initialised")
 
-	# The XR runtime owns frame pacing; Godot must not also block or throttle
+	# XR runtime frame pacing
 	DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
 	Engine.max_fps = 0
 
@@ -32,7 +33,7 @@ func _on_session_begun() -> void:
 	elif not rates.is_empty():
 		print("[Main|WARN]: %s Hz unavailable, runtime offers %s" % [target_refresh_rate, rates])
 
-	# Match physics to the *actual* rate. Returns 0.0 if the runtime doesn't expose it.
+	# Match physics to the actual rate.
 	var actual: float = xr_interface.display_refresh_rate
 	if actual > 0.0:
 		Engine.physics_ticks_per_second = int(round(actual))

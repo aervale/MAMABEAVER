@@ -1,3 +1,19 @@
 # Godot 4+ specific ignores
 .godot/
+
+# Android build template
 /android/
+
+# keystore
+export_credentials.cfg
+
+*.tmp
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# OpenXR Vendors plugin
+/addons/godotopenxrvendors/
+/asset/
