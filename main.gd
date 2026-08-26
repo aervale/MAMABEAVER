@@ -6,16 +6,17 @@ var xr_interface: OpenXRInterface
 
 ## _ready() is called when the node is initialize
 func _ready() -> void:
+	print(":3")
 	xr_interface = XRServer.find_interface("OpenXR") as OpenXRInterface
 	if xr_interface == null:
-		push_error("[Main|FATAL]: OpenXR interface not found. Check Project Settings -> XR")
+		push_error("Main|FATAL: OpenXR interface not found. Check Project Settings -> XR")
 		return
 
 	if not xr_interface.is_initialized() and not xr_interface.initialize():
-		push_error("[Main|FATAL]: OpenXR failed to initialise, headset connected?")
+		push_error("Main|FATAL: OpenXR failed to initialise, headset connected?")
 		return
 
-	print("[Main|INFO]: OpenXR initialised")
+	print("Main|INFO: OpenXR initialised")
 
 	# XR runtime frame pacing
 	DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
@@ -31,10 +32,10 @@ func _on_session_begun() -> void:
 	if target_refresh_rate in rates:
 		xr_interface.display_refresh_rate = target_refresh_rate
 	elif not rates.is_empty():
-		print("[Main|WARN]: %s Hz unavailable, runtime offers %s" % [target_refresh_rate, rates])
+		print("Main|WARN: %s Hz unavailable, runtime offers %s" % [target_refresh_rate, rates])
 
 	# Match physics to the actual rate.
 	var actual: float = xr_interface.display_refresh_rate
 	if actual > 0.0:
 		Engine.physics_ticks_per_second = int(round(actual))
-	print("[Main|INFO]: running at %s Hz" % Engine.physics_ticks_per_second)
+	print("Main|INFO: running at %s Hz" % Engine.physics_ticks_per_second)

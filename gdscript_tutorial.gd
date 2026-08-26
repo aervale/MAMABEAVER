@@ -139,7 +139,7 @@ func control_flow() -> void:
 	# NO exceptions: no try/except/raise/finally.
 	assert(n >= 0, "n must not be negative")
 	if n < 0:
-		push_error("[Tutorial|FATAL]: n out of range")
+		push_error("Tutorial|FATAL: n out of range")
 
 
 # --- Lambdas ---------------------------------------------------------------
