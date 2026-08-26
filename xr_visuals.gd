@@ -24,9 +24,6 @@ func _ready() -> void:
 func _attach(controller_path: NodePath, model: PackedScene) -> void:
 	var controller := get_node_or_null(controller_path) as XRController3D
 
-	# if controller.pose != EXPECTED_POSE:
-		# push_warning("pose mismatch")
-
 	var instance := model.instantiate() as Node3D
 
 	instance.name = "ControllerModel"

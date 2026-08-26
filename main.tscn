@@ -27,10 +27,10 @@ shader_parameter/line_color = Color(0.3, 0.48, 0.68, 1)
 shader_parameter/cell_size = 0.5
 
 [sub_resource type="PlaneMesh" id="PlaneMesh_floor"]
-size = Vector2(20, 20)
+size = Vector2(10, 10)
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_floor"]
-size = Vector3(20, 0.2, 20)
+size = Vector3(10, 0.2, 10)
 
 [sub_resource type="StandardMaterial3D" id="Mat_table"]
 albedo_color = Color(0.34, 0.29, 0.24, 1)
@@ -120,11 +120,12 @@ shape = SubResource("BoxShape3D_floor")
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.75, -0.6)
 
 [node name="Mesh" type="MeshInstance3D" parent="Table" unique_id=1507181728]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.0029900074, 0)
 material_override = SubResource("Mat_table")
 mesh = SubResource("BoxMesh_table")
 
 [node name="Collision" type="CollisionShape3D" parent="Table" unique_id=1762058184]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.010549545, 0)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.0020278692, 0)
 shape = SubResource("BoxShape3D_table")
 
 [node name="Props" type="Node3D" parent="." unique_id=546788418]
@@ -138,6 +139,7 @@ material_override = SubResource("Mat_red")
 mesh = SubResource("BoxMesh_prop")
 
 [node name="Collision" type="CollisionShape3D" parent="Props/Box" unique_id=64314266]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.09825504)
 shape = SubResource("BoxShape3D_prop")
 
 [node name="Ball" type="RigidBody3D" parent="Props" unique_id=362352031]
@@ -149,6 +151,7 @@ material_override = SubResource("Mat_green")
 mesh = SubResource("SphereMesh_prop")
 
 [node name="Collision" type="CollisionShape3D" parent="Props/Ball" unique_id=1357242908]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.121456295)
 shape = SubResource("SphereShape3D_prop")
 
 [node name="Pillar" type="RigidBody3D" parent="Props" unique_id=975572838]
@@ -159,11 +162,11 @@ material_override = SubResource("Mat_yellow")
 mesh = SubResource("CylinderMesh_prop")
 
 [node name="Collision" type="CollisionShape3D" parent="Props/Pillar" unique_id=1875812616]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.084144115)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.0027546883)
 shape = SubResource("CylinderShape3D_prop")
 
 [node name="SunLight" type="DirectionalLight3D" parent="." unique_id=1844096403]
-transform = Transform3D(0.86601907, -0.3535631, 0.3535593, 0, 0.70710295, 0.7071106, -0.500011, -0.61237127, 0.61236465, 0, 4, 0)
+transform = Transform3D(0.86601907, -0.3535631, 0.35355926, 0, 0.70710295, 0.70711064, -0.500011, -0.61237127, 0.6123646, 0, 2.9986405, 0)
 light_energy = 1.1
 shadow_enabled = true
 shadow_bias = 0.03
@@ -174,4 +177,5 @@ directional_shadow_max_distance = 12.0
 [node name="Passthrough" type="Node" parent="." unique_id=1290157622]
 script = ExtResource("6_pass")
 world_environment = NodePath("../WorldEnvironment")
+hide_in_passthrough = Array[NodePath]([NodePath("../Floor")])
 toggle_controller = NodePath("../XROrigin3D/XRControllerRight")
