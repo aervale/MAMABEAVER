@@ -178,4 +178,3 @@ directional_shadow_max_distance = 12.0
 script = ExtResource("6_pass")
 world_environment = NodePath("../WorldEnvironment")
 hide_in_passthrough = Array[NodePath]([NodePath("../Floor")])
-toggle_controller = NodePath("../XROrigin3D/XRControllerRight")
