@@ -147,7 +147,12 @@ things silently): `XROrigin3D`, `MoonExhibit`, `BlackHoleExhibit`, `SceneryExhib
   because flight assumes a horizontal play field.
 - Planet touchdown uses swept segment/sphere contact rather than only the
   frame endpoint. Safe-speed passes also get `landing_assist_margin`; the
-  assist never enlarges high-speed crash collisions.
+  assist never enlarges high-speed crash collisions. After contact, the
+  landing target is sampled from the imported moon mesh (the collision sphere
+  is deliberately conservative), and idle landed frames keep that height.
+- Quest trigger input has two paths—analogue polling and `trigger_click`
+  events—sharing `_fire_was_pressed`, so short pulls are neither lost nor
+  emitted twice.
 - `media/` holds demo stills and GIF clips (regenerate with a capture
   script; there is no ffmpeg on this machine, GIFs are built with Pillow
   using /usr/bin/python3 — the anaconda python has a broken MKL).

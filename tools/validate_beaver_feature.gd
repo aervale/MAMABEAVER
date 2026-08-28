@@ -248,6 +248,15 @@ func _run_checks(scene: Node) -> void:
 	await physics_frame
 	await physics_frame
 	_check(int(flight.get("state")) == STATE_LANDED, "slow planet contact lands (state=%d)" % int(flight.get("state")))
+	var touchdown_target: Vector3 = flight.get("_landing_to")
+	var touchdown_direction := (touchdown_target - planet.global_position).normalized()
+	var expected_touchdown_radius := float(
+		flight.call("_stand_radius", planet, touchdown_direction)
+	)
+	_check(
+		absf(touchdown_target.distance_to(planet.global_position) - expected_touchdown_radius) < 0.05,
+		"touchdown target uses the real moon surface instead of its oversized collision shell"
+	)
 	_check(
 		is_equal_approx(float(flight.get("fuel")), float(flight.get("maximum_fuel"))),
 		"landing refuels the tank"
@@ -282,10 +291,28 @@ func _run_checks(scene: Node) -> void:
 		int(game_sfx.call("get_play_count", &"trigger_shot")) == shot_sounds_before + 1,
 		"a successful trigger shot plays its firing sound"
 	)
+	# Quest can deliver trigger_click as an event between physics frames. The
+	# event fallback must fire once, then the analogue poll must not duplicate it.
+	var bolts_before_event := _count_bolts(scene)
+	flight.set("_fire_was_pressed", [false, false])
+	flight.call("_on_controller_button_pressed", &"trigger_click", right_controller)
+	var bolts_after_event := _count_bolts(scene)
+	_check(
+		bolts_after_event == bolts_before_event + 1,
+		"trigger_click event fallback fires when analogue polling misses an edge"
+	)
+	flight.call("_poll_vr_fire")
+	_check(
+		_count_bolts(scene) == bolts_after_event,
+		"trigger event and analogue polling cannot double-fire one pull"
+	)
 	# Straight down into the rock is the one aim that gets refused.
 	var into := (planet.global_position - muzzle).normalized()
 	flight.call("_try_fire", muzzle, into)
-	_check(_count_bolts(scene) == 1, "aiming into the surface is refused, not absorbed")
+	_check(
+		_count_bolts(scene) == bolts_after_event,
+		"aiming into the surface is refused, not absorbed"
+	)
 
 	# Simulate a real desktop right-click through _unhandled_input.
 	var click := InputEventMouseButton.new()
