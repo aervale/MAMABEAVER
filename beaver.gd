@@ -44,6 +44,7 @@ var state := BeaverState.IDLE
 var _visual_root: Node3D
 ## AnimationPlayer from the imported model, if it ships with one.
 var _animator: AnimationPlayer
+var _idle_clip := ""
 var _flight: Node3D
 var _home_parent: Node3D
 var _home_transform: Transform3D
@@ -94,6 +95,7 @@ func begin_tractor(flight: Node3D) -> bool:
 	state = BeaverState.TRACTORED
 	_flight = flight
 	_tractor_elapsed = 0.0
+	_play_clip(TRACTOR_CLIP)
 	var keep_transform := global_transform
 	var scene_root := get_tree().current_scene
 	get_parent().remove_child(self)
@@ -133,8 +135,9 @@ func reset_to_spawn() -> void:
 	visible = true
 	state = BeaverState.IDLE
 	_tractor_elapsed = 0.0
-	if _animator != null and not _animator.is_playing():
-		_animator.play()
+	# Back on the surface: return to the idle clip, not the swim.
+	if _animator != null and not _idle_clip.is_empty():
+		_play_clip(_idle_clip)
 
 
 func mark_delivered() -> void:
@@ -198,7 +201,13 @@ func _build_imported_visual() -> void:
 const EXTRA_ANIMATIONS := [
 	"res://models/beaver/animations/Idle_Walk.fbx",
 	"res://models/beaver/animations/Walk.fbx",
+	"res://models/beaver/animations/Swim.fbx",
 ]
+
+## Clip played while a beaver is being tractored through space — it is
+## swimming up to the ship, which is exactly what the archive's Swim clip
+## looks like.
+const TRACTOR_CLIP := "Swim"
 
 
 ## Copy clips out of the standalone animation files onto our own player.
@@ -226,6 +235,17 @@ func _merge_external_animations() -> void:
 					library.add_animation(clip_name, clip.duplicate())
 		# The donor scene exists only to hand over its clips.
 		temporary.queue_free()
+
+
+## Switch clips if the model actually has the requested one; silently do
+## nothing for the procedural fallback, which has no animator at all.
+func _play_clip(clip_name: String) -> void:
+	if _animator == null or not _animator.has_animation(clip_name):
+		return
+	var clip := _animator.get_animation(clip_name)
+	if clip != null:
+		clip.loop_mode = Animation.LOOP_LINEAR
+	_animator.play(clip_name)
 
 
 func _find_animation_player(root: Node) -> AnimationPlayer:
@@ -272,6 +292,7 @@ func _start_model_animation(model_root: Node) -> void:
 	if animation != null:
 		animation.loop_mode = Animation.LOOP_LINEAR
 	# Stagger playback so a planet's worth of beavers is not in lockstep.
+	_idle_clip = chosen
 	_animator.play(chosen)
 	_animator.seek(randf() * maxf(animation.length if animation != null else 1.0, 0.01), true)
 	print("BeaverCritter|INFO: playing imported animation '%s'" % chosen)

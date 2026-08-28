@@ -36,8 +36,12 @@ const MODEL_PATH := "res://models/beaver/Beaver.fbx"
 @export_range(1, 12, 1) var beavers_per_planet := 5
 ## Delivering this many ends the mission; extra spawned beavers preserve route choice.
 @export_range(1, 100, 1) var required_deliveries := 20
-## How many beavers may use the imported 17.5k-tri model (Quest budget).
-@export_range(0, 30, 1) var imported_model_budget := 6
+## How many beavers may use the imported model. 0 means "no limit", which
+## is the default: capping it left most planets showing the procedural
+## fallback while a lucky few got the real beaver, which read as a bug.
+## Lower this if the Quest struggles — each imported beaver is a skinned
+## ~17.5k-tri mesh with its own AnimationPlayer.
+@export_range(0, 120, 1) var imported_model_budget := 0
 @export var beaver_height_meters := 1.2
 
 var _beavers: Array[BeaverCritter] = []
@@ -71,7 +75,7 @@ func _ready() -> void:
 			var beaver := BeaverScript.new() as BeaverCritter
 			beaver.name = "Beaver_%s_%d" % [planet.name, index]
 			beaver.target_height = beaver_height_meters
-			if model != null and imported_budget_left > 0:
+			if model != null and (imported_model_budget <= 0 or imported_budget_left > 0):
 				beaver.model_scene = model
 				imported_budget_left -= 1
 			_place_on_planet(beaver, planet, index, beavers_per_planet, lattice_spin)
