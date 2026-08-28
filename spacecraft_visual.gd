@@ -1,10 +1,12 @@
 # =============================================================================
 # spacecraft_visual.gd — the ship you are actually flying.
 #
-# Parented under XROrigin3D, so it travels with the player. In the headset
-# you sit INSIDE it: the hull and nose sit below and ahead of your eyeline,
-# and a canopy rail frames your view without blocking it. On desktop the
-# orbit camera sees the whole craft from outside.
+# Parented under XROrigin3D, so it travels with the player. In XR its visual
+# pivot is additionally snapped to XRCamera3D's tracked world position every
+# frame. This removes room-scale separation: leaning, standing height and a
+# physical step cannot leave the hull behind. Physics remain authored by the
+# XROrigin3D controller. On desktop the orbit camera sees the craft at the
+# original physics anchor.
 #
 # Built from primitives in code, like every other model in this project
 # (see mit_destination.gd), so there is no asset to license or keep in sync.
@@ -17,23 +19,30 @@ extends Node3D
 class_name SpacecraftVisual
 
 @export_node_path("Node3D") var flight_path: NodePath
+@export_node_path("XRCamera3D") var flight_camera_path := NodePath("../XRCamera3D")
 
 # FlightState.LANDED, appended last in spaceship_flight.gd's enum.
 const STATE_LANDED := 4
 
 var _flight: Node3D
+var _flight_camera: XRCamera3D
 var _engine_glow: Array[MeshInstance3D] = []
 var _hull_root: Node3D
 
 
 func _ready() -> void:
 	_flight = get_node_or_null(flight_path) as Node3D
+	_flight_camera = get_node_or_null(flight_camera_path) as XRCamera3D
+	# Run after ordinary visual scripts so the camera lock is the final
+	# positional transform applied to the hull in each rendered frame.
+	process_priority = 100
 	_build_ship()
 
 
 func _process(_delta: float) -> void:
 	if _flight == null or _hull_root == null:
 		return
+	_sync_to_xr_camera()
 	# Step out of the ship to collect; bring the hull back as soon as the
 	# continuous takeoff begins so the player sees a craft during the glide.
 	var taking_off := (
@@ -53,6 +62,17 @@ func _process(_delta: float) -> void:
 		var material := glow.get_surface_override_material(0) as StandardMaterial3D
 		if material != null:
 			material.emission_energy_multiplier = 1.5 + throttle * 6.0 * pulse
+
+
+## Keep the cockpit centred on the player's tracked head position without
+## feeding room-scale motion back into flight physics, collision or the map.
+## `force` exists only for deterministic headless regression coverage.
+func _sync_to_xr_camera(force := false) -> void:
+	if _flight_camera == null:
+		return
+	if not force and not get_viewport().use_xr:
+		return
+	global_position = _flight_camera.global_position
 
 
 ## Point the ship's nose (-Z) exactly along its current velocity. There is no

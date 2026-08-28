@@ -126,15 +126,23 @@ func _run_checks(scene: Node) -> void:
 		return
 	_check(is_equal_approx(float(flight.get("arrival_radius")), 5.0), "MIT arrival radius is 5 m")
 
-	# Room-scale head movement must not alter the ship's physics anchor. The
-	# hull, minimap, landing and surface walking all follow XROrigin3D.
+	# Room-scale head movement must not alter physics, while the XR-only visual
+	# lock must place the cockpit at the tracked camera so the hull cannot
+	# separate from the player. Headless mode calls the same helper explicitly.
 	if xr_camera != null:
 		xr_camera.position = Vector3(1.2, 0.3, -0.8)
 		var anchored: Vector3 = flight.call("get_spacecraft_world_position")
 		_check(
 			anchored.distance_to((flight as Node3D).global_position) < 0.01,
-			"headset room-scale offset cannot separate the player from the ship"
+			"headset room-scale offset does not change the physics anchor"
 		)
+		ship_visual.call("_sync_to_xr_camera", true)
+		_check(
+			ship_visual.global_position.distance_to(xr_camera.global_position) < 0.001,
+			"XR spacecraft visual stays fixed to the tracked headset position"
+		)
+		# Desktop/headless keeps the external craft at the authoritative origin.
+		ship_visual.global_position = (flight as Node3D).global_position
 
 	# --- spawning ---
 	var total := int(director.call("get_total_count"))

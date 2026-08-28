@@ -83,7 +83,7 @@ altitude (`√(R² − dz²)`).
 | `surface_dust.gd` | Self-freeing one-shot dust puff (landing + footsteps). |
 | `black_hole_lens.gdshader` | Screen-space gravitational lensing shell (layer 1). |
 | `black_hole_cloud.gdshader` | Translucent swirling gas cloud (layer 2). |
-| `spacecraft_visual.gd` | The ship you fly, visible around you (hidden while landed). |
+| `spacecraft_visual.gd` | The ship you fly; XR position-locks its cockpit to the tracked headset (hidden while landed). |
 | `flight_hud_graphic.gd` / `vr_hud_presenter.gd` | Graphical in-headset status gauges (replaced the text Label3D). |
 | `vr_minimap_presenter.gd` | SubViewport → head-locked quad for VR map. |
 | `desktop_orbit_camera.gd` | No-headset orbit camera. |

@@ -159,6 +159,7 @@ mesh = SubResource("SphereMesh_ship_marker")
 [node name="Spacecraft" type="Node3D" parent="XROrigin3D" unique_id=903318470]
 script = ExtResource("24_ship")
 flight_path = NodePath("..")
+flight_camera_path = NodePath("../XRCamera3D")
 
 [node name="AmbientDust" type="Node3D" parent="XROrigin3D" unique_id=903318450]
 script = ExtResource("21_dust")

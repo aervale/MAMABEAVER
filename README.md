@@ -20,6 +20,7 @@ gravity fields and collision volumes of ten planets and five black holes.
 - Land on planets and shoot Beaver targets; delivering 20 to MIT wins.
 - Victory opens a shared desktop/XR results screen with Beaver points, remaining-fuel bonus, mission rank, and total score.
 - The start screen includes a large English controls and mission guide in the centre of the view.
+- In XR the spacecraft visual is position-locked to the tracked headset, preventing room-scale movement from separating the cockpit and player.
 - Original procedural cues play for firing, Beaver capture, MIT deposit, and victory.
 
 At startup and after a reset, the spacecraft is stationary, gravity is not
