@@ -3,12 +3,15 @@
 # root by spaceship_flight.gd's _try_fire() (VR trigger while LANDED, or
 # desktop right-click); at most max_live_bolts exist at once.
 #
-# Flies at a constant-ish speed but its HORIZONTAL velocity is curved every
-# tick by the same gravity field the ship feels — via the flight
-# controller's get_total_gravity_at() — so bolts bend around planets and
-# visibly spiral into black holes. Vertical velocity is left ballistic-free
-# (beavers live near the flight plane; keeping bolts there keeps shots
-# makeable).
+# Its HORIZONTAL velocity is nudged every tick by the same gravity field
+# the ship feels — via the flight controller's get_total_gravity_at() — so
+# bolts visibly bend around planets and curve toward black holes. The pull
+# is scaled by `gravity_scale` (well under 1.0): at full strength a bolt
+# fired at a beaver 6 m away curved into the planet before arriving, which
+# made aiming feel random. Scaled down, shots fly essentially where you
+# point them and the curve is flavour you can exploit, not fight.
+# Vertical velocity is left ballistic-free (beavers live near the flight
+# plane; keeping bolts there keeps shots makeable).
 #
 # No physics bodies (project style): hits are distance checks.
 # Despawns when it: exceeds its lifetime, leaves the play volume, splashes
@@ -29,6 +32,8 @@ const TRAIL_SPACING_SECONDS := 0.04
 
 var velocity := Vector3.ZERO
 var hit_radius := 2.0
+## Fraction of real gravity applied to the bolt. 0 = laser, 1 = full field.
+var gravity_scale := 0.35
 
 var _flight: Node3D
 var _director: Node3D
@@ -120,8 +125,8 @@ func _physics_process(delta: float) -> void:
 	# Curve through the shared gravity field (logical XY == world XZ).
 	if _flight != null and _flight.has_method("get_total_gravity_at"):
 		var gravity: Vector2 = _flight.call("get_total_gravity_at", global_position)
-		velocity.x += gravity.x * delta
-		velocity.z += gravity.y * delta
+		velocity.x += gravity.x * gravity_scale * delta
+		velocity.z += gravity.y * gravity_scale * delta
 	global_position += velocity * delta
 
 	_update_trail(delta)

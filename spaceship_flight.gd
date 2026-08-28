@@ -59,6 +59,7 @@ extends XROrigin3D
 class_name SpacecraftFlightController
 
 const MagicBoltScript = preload("res://magic_bolt.gd")
+const SurfaceDustScript = preload("res://surface_dust.gd")
 
 ## Moves the XR rig like a spacecraft over the XY play field. The spacecraft
 ## reference point is locked to a constant Z altitude while room-scale head
@@ -123,9 +124,14 @@ const FIRE_BUTTONS: Array[StringName] = [
 @export_range(1.0, 15.0, 0.5) var takeoff_speed := 5.0
 ## After takeoff, the departed planet is ignored this long (no re-collide).
 @export_range(0.1, 3.0, 0.05) var takeoff_grace_seconds := 0.75
-@export_range(5.0, 60.0, 1.0) var bolt_speed := 25.0
+@export_range(5.0, 60.0, 1.0) var bolt_speed := 36.0
 @export_range(0.5, 5.0, 0.1) var bolt_hit_radius := 2.0
+## How much of the gravity field bends a bolt. Low = straight shots that
+## still visibly curve near planets; 1.0 made close-range aiming a lottery.
+@export_range(0.0, 1.0, 0.05) var bolt_gravity_scale := 0.35
 @export_range(1, 8, 1) var max_live_bolts := 3
+## Speed you stroll around a planet's surface while landed.
+@export_range(0.5, 12.0, 0.5) var surface_walk_speed := 3.5
 @export_node_path("Node3D") var beaver_director_path: NodePath
 
 @export_group("Planet gravity")
@@ -169,6 +175,7 @@ var _live_bolts: Array[Node3D] = []
 var _inside_arrival_zone := false
 var _banner_text := ""
 var _banner_time_left := 0.0
+var _walk_dust_cooldown := 0.0
 var _last_flight_input := Vector2.ZERO
 var _prediction_elapsed := 0.0
 
@@ -239,6 +246,9 @@ func _physics_process(delta: float) -> void:
 				# Re-arm banking only after leaving the zone, so hovering at
 				# MIT doesn't re-trigger the banner every frame.
 				_inside_arrival_zone = false
+	elif state == FlightState.LANDED:
+		_last_flight_input = Vector2.ZERO
+		_walk_on_surface(delta, _get_flight_input())
 	else:
 		_last_flight_input = Vector2.ZERO
 
@@ -539,7 +549,7 @@ func _check_obstacle_collisions() -> void:
 			var collision_distance := float(diameter) * 0.5 + spacecraft_radius
 			if spacecraft_world_position.distance_to(obstacle.global_position) <= collision_distance:
 				if velocity.length() < landing_speed_threshold:
-					_land_on(obstacle, collision_distance)
+					_land_on(obstacle, collision_distance, velocity.length())
 				else:
 					_crash("COLLISION · %s" % obstacle.name, 0.35)
 				return
@@ -563,7 +573,7 @@ func _crash(message: String, haptic_duration: float) -> void:
 	print("SpacecraftFlight|INFO: %s" % message)
 
 
-func _land_on(planet: Node3D, collision_distance: float) -> void:
+func _land_on(planet: Node3D, collision_distance: float, impact_speed: float) -> void:
 	state = FlightState.LANDED
 	_landed_planet = planet
 	velocity = Vector2.ZERO
@@ -584,9 +594,76 @@ func _land_on(planet: Node3D, collision_distance: float) -> void:
 	global_position += Vector3(target_xz.x - camera_xz.x, 0.0, target_xz.y - camera_xz.y)
 
 	_pulse_controllers(0.3, 0.2)
+	# Touchdown dust: bigger burst for a harder landing.
+	_spawn_dust(
+		get_spacecraft_world_position(),
+		planet,
+		int(lerpf(18.0, 46.0, clampf(impact_speed / landing_speed_threshold, 0.0, 1.0))),
+		lerpf(2.0, 4.5, clampf(impact_speed / landing_speed_threshold, 0.0, 1.0)),
+		0.95
+	)
 	_update_predicted_flow()
 	_update_status()
-	print("SpacecraftFlight|INFO: landed on %s, refueled" % planet.name)
+	print("SpacecraftFlight|INFO: landed on %s at %.1f m/s, refueled" % [planet.name, impact_speed])
+
+
+## While landed you can stroll AROUND the planet along the ring where its
+## surface meets the flight plane. Altitude stays locked (the whole game is
+## a fixed-altitude 2D field), so the ring IS the walkable surface — this is
+## also how you reach the beavers that spawned on the far side.
+func _walk_on_surface(delta: float, input: Vector2) -> void:
+	if _walk_dust_cooldown > 0.0:
+		_walk_dust_cooldown -= delta
+	if _landed_planet == null or input.is_zero_approx():
+		return
+
+	var camera_position := get_spacecraft_world_position()
+	# Flatten to a 2D ground vector FIRST: mixing Vector3.y (altitude) with
+	# Vector2.y (world Z) here silently teleported the ship off the planet.
+	var camera_xz := Vector2(camera_position.x, camera_position.z)
+	var planet_xz := Vector2(_landed_planet.global_position.x, _landed_planet.global_position.z)
+	var offset := camera_xz - planet_xz
+	var ring_radius := offset.length()
+	if ring_radius < 0.01:
+		return
+
+	# Keep only the component that goes AROUND the planet; pushing straight
+	# into (or away from) the surface does nothing while landed.
+	var radial := offset / ring_radius
+	var tangent := Vector2(-radial.y, radial.x)
+	var along := input.dot(tangent)
+	if is_zero_approx(along):
+		return
+
+	# Arc length -> angle, so walking speed is constant regardless of the
+	# planet's size.
+	var angle := along * surface_walk_speed * delta / ring_radius
+	var target := planet_xz + offset.rotated(angle)
+	global_position += Vector3(target.x - camera_xz.x, 0.0, target.y - camera_xz.y)
+
+	if _walk_dust_cooldown <= 0.0:
+		_walk_dust_cooldown = 0.22
+		_spawn_dust(get_spacecraft_world_position(), _landed_planet, 6, 1.1, 0.55)
+
+
+## Puff of surface dust, thrown along the planet's outward normal.
+func _spawn_dust(
+	at: Vector3,
+	planet: Node3D,
+	amount: int,
+	speed: float,
+	lifetime: float
+) -> void:
+	var dust := SurfaceDustScript.new() as SurfaceDust
+	var normal := at - planet.global_position
+	dust.surface_normal = normal.normalized() if normal.length() > 0.01 else Vector3.UP
+	dust.burst_amount = amount
+	dust.burst_speed = speed
+	dust.puff_lifetime = lifetime
+	get_tree().current_scene.add_child(dust)
+	# Sit the puff just inside the contact point so it looks like it comes
+	# off the ground rather than out of the player's face.
+	dust.global_position = at - dust.surface_normal * 0.4
 
 
 func take_off() -> void:
@@ -748,6 +825,7 @@ func _try_fire(origin: Vector3, direction: Vector3) -> void:
 	var bolt := MagicBoltScript.new() as MagicBolt
 	bolt.velocity = direction.normalized() * bolt_speed
 	bolt.hit_radius = bolt_hit_radius
+	bolt.gravity_scale = bolt_gravity_scale
 	bolt.setup(self, _beaver_director, _obstacles_root, _black_holes_root, play_area_min, play_area_max)
 	get_tree().current_scene.add_child(bolt)
 	bolt.global_position = origin
@@ -770,7 +848,7 @@ func _update_status() -> void:
 		FlightState.WAITING:
 			message = "GRAVITY FIELD DISENGAGED\nPress B or Y to start"
 		FlightState.LANDED:
-			message = "LANDED · %s · REFUELED\nTRIGGER: magic bolt   B/Y: launch" % (
+			message = "LANDED · %s · REFUELED\nWASD/stick: walk   TRIGGER: bolt   B/Y: launch" % (
 				_landed_planet.name if _landed_planet != null else "?"
 			)
 		FlightState.CRASHED:

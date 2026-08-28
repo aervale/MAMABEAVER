@@ -407,7 +407,7 @@ text = "Ship: (0, 0, 10)  ·  Goal: (200, 200, 10)"
 [node name="Controls" type="Label" parent="DesktopHUD/Panel/Content" unique_id=156795761]
 layout_mode = 2
 theme_override_colors/font_color = Color(0.66, 0.72, 0.84, 1)
-text = "B/Y: start & launch   ·   WASD: fly   ·   Slow-touch a planet to land   ·   Right-click a beaver to fire   ·   Wheel: zoom out   ·   R: reset"
+text = "B/Y: start & launch   ·   WASD: fly / walk when landed   ·   Slow-touch a planet to land   ·   Right-click a beaver to fire   ·   R: reset"
 
 [node name="Credit" type="Label" parent="DesktopHUD/Panel/Content" unique_id=709426833]
 layout_mode = 2

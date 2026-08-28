@@ -96,6 +96,31 @@ func _run_checks(scene: Node) -> void:
 			spawned_near_ship = spawned_near_ship and (child as Node3D).global_position.distance_to(ship_now) < 3.0
 	_check(spawned_near_ship, "right-click bolts spawn at the ship, not at the orbit camera")
 
+	# --- walking around the planet while landed ---
+	var before_walk: Vector3 = flight.call("get_spacecraft_world_position")
+	var radius_before := Vector2(before_walk.x, before_walk.z).distance_to(
+		Vector2(planet.global_position.x, planet.global_position.z))
+	# One second of "stick held sideways".
+	for i in 60:
+		flight.call("_walk_on_surface", 1.0 / 60.0, Vector2(0.0, 1.0))
+	var after_walk: Vector3 = flight.call("get_spacecraft_world_position")
+	var radius_after := Vector2(after_walk.x, after_walk.z).distance_to(
+		Vector2(planet.global_position.x, planet.global_position.z))
+	var walked := before_walk.distance_to(after_walk)
+	_check(walked > 1.0, "walking actually moves the ship around the planet (%.2f m)" % walked)
+	_check(
+		absf(radius_after - radius_before) < 0.05,
+		"walking stays on the surface ring (r %.2f -> %.2f)" % [radius_before, radius_after]
+	)
+	_check(int(flight.get("state")) == STATE_LANDED, "walking does not leave the LANDED state")
+
+	# Pushing straight into the planet must not move you.
+	var into := (Vector2(planet.global_position.x, planet.global_position.z)
+		- Vector2(after_walk.x, after_walk.z)).normalized()
+	flight.call("_walk_on_surface", 1.0 / 60.0, into)
+	var after_push: Vector3 = flight.call("get_spacecraft_world_position")
+	_check(after_push.distance_to(after_walk) < 0.01, "pushing into the planet does not burrow through it")
+
 	# --- takeoff + grace ---
 	flight.call("take_off")
 	_check(int(flight.get("state")) == STATE_FLYING, "B/Y takes off")
