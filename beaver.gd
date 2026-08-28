@@ -187,6 +187,17 @@ func _build_imported_visual() -> void:
 		_build_procedural_visual()
 		return
 
+	# Skinned meshes are culled against their BIND-POSE bounds, and a small
+	# or stale AABB makes Godot skip the skeleton update — the beaver keeps
+	# "playing" but stops visibly moving once it is far away or near the
+	# edge of view. A generous cull margin keeps them animating.
+	for node in _all_nodes(imported):
+		if node is MeshInstance3D:
+			(node as MeshInstance3D).extra_cull_margin = 8.0
+		elif node is Skeleton3D:
+			# Keep posing the skeleton even when the mesh is off-screen.
+			(node as Skeleton3D).motion_scale = 1.0
+
 	var uniform_scale := target_height / bounds.size.y
 	imported.scale = Vector3.ONE * uniform_scale
 	# Feet on the surface: lift so the bounds' bottom sits at local y = 0.
@@ -248,6 +259,17 @@ func _play_clip(clip_name: String) -> void:
 	_animator.play(clip_name)
 
 
+func _all_nodes(root: Node) -> Array[Node]:
+	var out: Array[Node] = []
+	var pending: Array[Node] = [root]
+	while not pending.is_empty():
+		var node: Node = pending.pop_back()
+		out.append(node)
+		for child in node.get_children():
+			pending.append(child)
+	return out
+
+
 func _find_animation_player(root: Node) -> AnimationPlayer:
 	var pending: Array[Node] = [root]
 	while not pending.is_empty():
@@ -293,6 +315,9 @@ func _start_model_animation(model_root: Node) -> void:
 		animation.loop_mode = Animation.LOOP_LINEAR
 	# Stagger playback so a planet's worth of beavers is not in lockstep.
 	_idle_clip = chosen
+	# Without this the mixer stops advancing whenever the node tree decides
+	# the beaver is not visible, which is what froze the distant ones.
+	_animator.callback_mode_process = AnimationMixer.ANIMATION_CALLBACK_MODE_PROCESS_IDLE
 	_animator.play(chosen)
 	_animator.seek(randf() * maxf(animation.length if animation != null else 1.0, 0.01), true)
 	print("BeaverCritter|INFO: playing imported animation '%s'" % chosen)

@@ -390,11 +390,10 @@ func _run_checks(scene: Node) -> void:
 		int(flight.get("state")) == STATE_FLYING,
 		"takeoff remains clear after the grace period"
 	)
-	# Firing in flight must add nothing (an absolute count is wrong here:
-	# earlier landed shots are legitimately still in the air).
+	# Firing in flight is now allowed, so a shot here must ADD a bolt.
 	var bolts_before := _count_bolts(scene)
-	flight.call("_try_fire", Vector3.ZERO, Vector3(1, 0, 0))
-	_check(_count_bolts(scene) == bolts_before, "cannot fire while flying")
+	flight.call("_try_fire", flight.call("get_spacecraft_world_position"), Vector3(0, 0, 1))
+	_check(_count_bolts(scene) == bolts_before + 1, "can fire while flying")
 
 	# --- impact warning fires on a fast approach, stays quiet on a slow one ---
 	flight.call("reset_flight")
@@ -416,6 +415,10 @@ func _run_checks(scene: Node) -> void:
 	await physics_frame
 	await physics_frame
 	_check(int(flight.get("state")) == STATE_CRASHED, "fast planet contact still crashes")
+	# B/Y must revive the run too: it is the button players reach for.
+	flight.call("_on_controller_button_pressed", &"by_button")
+	_check(int(flight.get("state")) == STATE_WAITING, "B/Y restarts after a crash")
+	flight.call("start_flight")
 
 	# --- tractor -> cargo ---
 	flight.call("reset_flight")

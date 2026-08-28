@@ -296,12 +296,18 @@ func _process(_delta: float) -> void:
 
 
 func _physics_process(delta: float) -> void:
+	# B/Y is the "go" button in every state: it starts a run, launches off a
+	# planet, AND restarts after a crash or a win. It previously did nothing
+	# on the end screens — only A/X and R restarted — so after dying, the
+	# button players actually reach for looked broken.
 	var start_pressed := _is_start_pressed()
 	if start_pressed and not _start_was_pressed:
 		if state == FlightState.WAITING:
 			start_flight()
 		elif state == FlightState.LANDED:
 			take_off()
+		elif state == FlightState.CRASHED or state == FlightState.ARRIVED:
+			reset_flight()
 	_start_was_pressed = start_pressed
 
 	# Restart only from true end states — NOT from LANDED, or players would
@@ -1273,6 +1279,10 @@ func _on_controller_button_pressed(action: StringName) -> void:
 		start_flight()
 	elif action in START_BUTTONS and state == FlightState.LANDED:
 		take_off()
+	elif action in START_BUTTONS and (
+		state == FlightState.CRASHED or state == FlightState.ARRIVED
+	):
+		reset_flight()
 	elif (
 		action in RESTART_BUTTONS
 		and (state == FlightState.CRASHED or state == FlightState.ARRIVED)
@@ -1374,11 +1384,12 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 func _try_fire(origin: Vector3, direction: Vector3) -> void:
-	# Bolts are a landed-only tool: collection happens ON planets, per spec.
-	if state != FlightState.LANDED or _takeoff_elapsed >= 0.0:
-		# Silent failure reads as a broken button; say why.
-		if state == FlightState.FLYING:
-			_set_banner("LAND ON A PLANET TO FIRE", 1.5)
+	# Firing works in flight as well as from the surface, so you can pick
+	# beavers off on a fly-by instead of having to touch down first. Still
+	# blocked mid-takeoff, while the launch animation owns the rig.
+	if state != FlightState.LANDED and state != FlightState.FLYING:
+		return
+	if _takeoff_elapsed >= 0.0:
 		return
 	_live_bolts = _live_bolts.filter(func(bolt): return is_instance_valid(bolt))
 	if _live_bolts.size() >= max_live_bolts:
