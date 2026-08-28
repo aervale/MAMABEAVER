@@ -62,10 +62,24 @@ func _update_heading(logical_velocity: Vector2) -> void:
 	global_basis = Basis.looking_at(forward, Vector3.UP)
 
 
+## Downloaded rocket sections (April's STLs, converted to OBJ and
+## decimated from ~239k triangles to ~22k for the Quest budget).
+const ROCKET_PARTS := [
+	["res://models/imported/rocket_front.obj", -1.55],
+	["res://models/imported/rocket_middle.obj", 0.0],
+	["res://models/imported/rocket_back.obj", 1.55],
+]
+
+
 func _build_ship() -> void:
 	_hull_root = Node3D.new()
 	_hull_root.name = "Hull"
 	add_child(_hull_root)
+
+	# Prefer the imported rocket; fall back to the primitive craft below if
+	# the OBJ files are missing.
+	if _build_imported_rocket():
+		return
 
 	var hull := StandardMaterial3D.new()
 	hull.albedo_color = Color(0.62, 0.66, 0.72)
@@ -168,6 +182,74 @@ func _build_ship() -> void:
 		rail.rotation_degrees = Vector3(0.0, side * 2.0, 0.0)
 	# Console strip glowing just under the forward view.
 	_add_box("Console", Vector3(1.1, 0.05, 0.34), Vector3(0.0, -0.52, -0.92), accent, _hull_root)
+
+
+## Assemble the three downloaded sections nose-to-tail beneath the player.
+## Each is normalized independently and then placed along -Z, so a section
+## arriving at a different scale from its siblings cannot skew the ship.
+func _build_imported_rocket() -> bool:
+	var built := false
+	var body := StandardMaterial3D.new()
+	body.albedo_color = Color(0.78, 0.8, 0.85)
+	body.metallic = 0.55
+	body.roughness = 0.4
+
+	for spec in ROCKET_PARTS:
+		var path := spec[0] as String
+		if not ResourceLoader.exists(path):
+			continue
+		var mesh := load(path) as Mesh
+		if mesh == null:
+			continue
+		var instance := MeshInstance3D.new()
+		instance.name = path.get_file().get_basename()
+		instance.mesh = mesh
+		instance.material_override = body
+		instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		_hull_root.add_child(instance)
+
+		var bounds := mesh.get_aabb()
+		var longest := maxf(bounds.size.x, maxf(bounds.size.y, bounds.size.z))
+		if longest <= 0.0001:
+			instance.queue_free()
+			continue
+		var uniform := 1.7 / longest
+		instance.scale = Vector3.ONE * uniform
+		# Sit the section below the eyeline and slide it along the fuselage.
+		instance.position = Vector3(0.0, -1.05, spec[1] as float) \
+			- bounds.get_center() * uniform
+		built = true
+
+	if built:
+		_add_engine_glows()
+		print("SpacecraftVisual|INFO: using imported rocket sections")
+	return built
+
+
+## Engine flares for the imported hull (the primitive build makes its own).
+func _add_engine_glows() -> void:
+	for side in [-0.42, 0.42]:
+		var flame_material := StandardMaterial3D.new()
+		flame_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		flame_material.albedo_color = Color(0.4, 0.9, 1.0)
+		flame_material.emission_enabled = true
+		flame_material.emission = Color(0.2, 0.7, 1.0)
+		flame_material.emission_energy_multiplier = 3.0
+
+		var flame := SphereMesh.new()
+		flame.radius = 0.22
+		flame.height = 0.44
+		flame.radial_segments = 20
+		flame.rings = 12
+		var instance := _add_mesh(
+			"ImportedEngineGlow%.0f" % (side * 100.0),
+			flame,
+			Vector3(side, -1.05, 2.5),
+			_hull_root
+		)
+		instance.set_surface_override_material(0, flame_material)
+		instance.scale = Vector3(1.0, 1.0, 2.0)
+		_engine_glow.append(instance)
 
 
 func _add_box(

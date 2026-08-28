@@ -122,6 +122,13 @@ func _place_on_planet(
 	beaver.mark_home()
 
 
+## Public wrapper: distance from a planet's centre to its real mesh surface
+## along `direction`. The flight controller uses this so the player walks at
+## the beavers' level instead of floating on the collision radius.
+func get_surface_radius(planet: Node3D, direction: Vector3, fallback: float) -> float:
+	return _surface_radius_along(planet, direction, fallback)
+
+
 ## Distance from a planet's centre to its mesh surface along `direction`.
 ##
 ## Vertices are cached per planet on first use and subsampled (the moon mesh

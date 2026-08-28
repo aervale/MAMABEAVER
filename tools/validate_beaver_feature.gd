@@ -169,13 +169,23 @@ func _run_checks(scene: Node) -> void:
 
 	var walked := before_walk.distance_to(after_walk)
 	_check(walked > 1.0, "walking actually moves the ship over the planet (%.2f m)" % walked)
-	# The invariant is now the 3D sphere radius, not a flat ring.
-	var sphere_before := before_walk.distance_to(planet.global_position)
-	var sphere_after := after_walk.distance_to(planet.global_position)
+	# The rock is lumpy and the player now follows it, so a CONSTANT radius
+	# is no longer the contract: what must hold is that you stand on the
+	# sampled surface, at the beavers' level.
+	var out_dir := (after_walk - planet.global_position).normalized()
+	var expected := float(flight.call("_stand_radius", planet, out_dir))
+	var actual := after_walk.distance_to(planet.global_position)
 	_check(
-		absf(sphere_after - sphere_before) < 0.05,
-		"walking stays on the sphere (r %.2f -> %.2f)" % [sphere_before, sphere_after]
+		absf(actual - expected) < 0.35,
+		"walking keeps the player on the sampled surface (%.2f vs %.2f)" % [actual, expected]
 	)
+	var beaver_probe: Node3D = director.call("find_beaver_near", planet.global_position, 30.0)
+	if beaver_probe != null:
+		var beaver_r := beaver_probe.global_position.distance_to(planet.global_position)
+		_check(
+			absf(actual - beaver_r) < 2.5,
+			"player walks at the beavers' level (player %.2f, beaver %.2f)" % [actual, beaver_r]
+		)
 	_check(
 		absf(after_walk.y - 10.0) > 0.5,
 		"walking leaves the flight plane — you can climb the sphere (y=%.2f)" % after_walk.y
@@ -204,9 +214,13 @@ func _run_checks(scene: Node) -> void:
 		for i in 30:
 			flight.call("_walk_on_surface", 1.0 / 60.0, dir)
 	var after_roam: Vector3 = flight.call("get_spacecraft_world_position")
+	var roam_dir := (after_roam - planet.global_position).normalized()
 	_check(
-		absf(after_roam.distance_to(planet.global_position) - sphere_before) < 0.05,
-		"walking any direction never burrows into or floats off the sphere"
+		absf(
+			after_roam.distance_to(planet.global_position)
+			- float(flight.call("_stand_radius", planet, roam_dir))
+		) < 0.35,
+		"walking any direction never burrows into or floats off the surface"
 	)
 
 	# --- takeoff + grace ---

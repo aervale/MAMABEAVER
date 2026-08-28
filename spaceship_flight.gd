@@ -157,6 +157,14 @@ const MAP_EXPAND_BUTTONS: Array[StringName] = [
 ## How long the touchdown glide takes. Snapping straight onto the surface
 ## was the disorienting part of landing, so the ship now eases in.
 @export_range(0.0, 4.0, 0.1) var landing_animation_seconds := 1.4
+## Eye height above the rock while walking. The collision radius sits well
+## outside the visible mesh, so standing on it left the player hovering
+## metres above the beavers.
+@export_range(0.0, 4.0, 0.1) var surface_stand_height := 1.2
+## Footprints left behind while walking, so a planet you have already
+## combed reads as visited. Capped per planet to bound the node count.
+@export_range(0, 400, 10) var max_footprints_per_planet := 120
+@export_range(0.2, 4.0, 0.1) var footprint_spacing := 1.1
 ## Warn when a planet is this many seconds away at the current closing speed.
 @export_range(0.5, 8.0, 0.25) var impact_warning_seconds := 2.5
 @export_node_path("Node3D") var beaver_director_path: NodePath
@@ -212,6 +220,10 @@ var _warning_haptic_cooldown := 0.0
 var _landing_from := Vector3.ZERO
 var _landing_to := Vector3.ZERO
 var _landing_elapsed := -1.0
+var _restart_hold := 0.0
+var _last_footprint := Vector3(1e9, 1e9, 1e9)
+## planet -> Array of footprint MeshInstance3D, oldest first.
+var _footprints := {}
 var _map_expanded := false
 var _last_flight_input := Vector2.ZERO
 var _prediction_elapsed := 0.0
@@ -243,12 +255,25 @@ func _physics_process(delta: float) -> void:
 
 	# Restart only from true end states — NOT from LANDED, or players would
 	# wipe their run reaching for the wrong button on a planet.
+	# Edge detection alone was unreliable: if you were already holding A/X
+	# or the trigger when you died (very common — you die mid-action), the
+	# press edge had already been consumed and the button looked dead until
+	# you released and pressed again. A HELD button now also restarts after
+	# a short delay, which keeps the crash message readable without ever
+	# stranding the player.
 	var restart_pressed := _is_restart_pressed()
-	if (
-		restart_pressed and not _restart_was_pressed
-		and (state == FlightState.CRASHED or state == FlightState.ARRIVED)
-	):
-		reset_flight()
+	var can_restart := state == FlightState.CRASHED or state == FlightState.ARRIVED
+	if restart_pressed and can_restart:
+		if not _restart_was_pressed:
+			_restart_hold = 0.0
+			reset_flight()
+		else:
+			_restart_hold += delta
+			if _restart_hold >= 0.35:
+				_restart_hold = 0.0
+				reset_flight()
+	else:
+		_restart_hold = 0.0
 	_restart_was_pressed = restart_pressed
 
 	_poll_vr_fire()
@@ -314,6 +339,10 @@ func reset_flight() -> void:
 	_takeoff_grace = 0.0
 	_surface_walk_forward = Vector3.ZERO
 	_landing_elapsed = -1.0
+	_last_footprint = Vector3(1e9, 1e9, 1e9)
+	# Footprints deliberately survive a reset — they are a record of which
+	# planets you have already combed, which is exactly what you want after
+	# dying and starting the run again.
 	_level_rig()
 	_inside_arrival_zone = false
 	_banner_time_left = 0.0
@@ -749,9 +778,14 @@ func _walk_on_surface(delta: float, input: Vector2) -> void:
 	# Preserve analog magnitude: a gentle stick push walks slowly instead of
 	# jumping immediately to full surface_walk_speed.
 	var stepped := position_now + move.normalized() * surface_walk_speed * input_strength * delta
-	var target := center + (stepped - center).normalized() * surface_radius
+	# Re-sample the surface in the NEW direction: the rock is lumpy, so a
+	# frozen radius sinks you underground on the wide parts and floats you
+	# on the narrow ones. This is also what puts you at the beavers' level.
+	var stepped_direction := (stepped - center).normalized()
+	var target := center + stepped_direction * _stand_radius(_landed_planet, stepped_direction)
 	global_position += target - position_now
 
+	_leave_footprint(target, stepped_direction)
 	if _walk_dust_cooldown <= 0.0:
 		_walk_dust_cooldown = 0.22
 		_spawn_dust(get_spacecraft_world_position(), _landed_planet, 3, 0.8, 0.45)
@@ -773,6 +807,64 @@ func _advance_landing(delta: float) -> void:
 
 	if progress >= 1.0:
 		_landing_elapsed = -1.0
+
+
+## Drop a scuff mark on the rock, parented to the planet so it stays put
+## (and travels with the planet). Spacing is measured in world distance
+## rather than time, so footprints do not bunch up when you walk slowly.
+func _leave_footprint(at: Vector3, normal: Vector3) -> void:
+	if _landed_planet == null or max_footprints_per_planet <= 0:
+		return
+	if at.distance_to(_last_footprint) < footprint_spacing:
+		return
+	_last_footprint = at
+
+	var trail: Array = _footprints.get(_landed_planet, [])
+	# Recycle the oldest mark once the planet is full, so a long stroll
+	# cannot spawn unbounded nodes.
+	if trail.size() >= max_footprints_per_planet:
+		var oldest: Node = trail.pop_front()
+		if is_instance_valid(oldest):
+			oldest.queue_free()
+
+	var material := StandardMaterial3D.new()
+	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	material.albedo_color = Color(0.16, 0.13, 0.11, 0.5)
+	material.cull_mode = BaseMaterial3D.CULL_DISABLED
+
+	var mesh := QuadMesh.new()
+	mesh.size = Vector2(0.34, 0.5)
+	mesh.material = material
+
+	var print_instance := MeshInstance3D.new()
+	print_instance.name = "Footprint"
+	print_instance.mesh = mesh
+	print_instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_landed_planet.add_child(print_instance)
+	# Lay the quad flat on the surface, lifted a hair to avoid z-fighting.
+	var lift := at - normal * (surface_stand_height - 0.04)
+	print_instance.global_position = lift
+	var reference := Vector3.UP if absf(normal.y) < 0.9 else Vector3.FORWARD
+	var tangent := reference.cross(normal).normalized()
+	print_instance.global_basis = Basis(tangent, normal, tangent.cross(normal))
+	print_instance.rotate_object_local(Vector3.RIGHT, -PI * 0.5)
+
+	trail.append(print_instance)
+	_footprints[_landed_planet] = trail
+
+
+## Distance from a planet's centre at which the player should stand, given a
+## direction out from the centre. Falls back to the collision radius when
+## the beaver director (which owns the mesh sampling) is absent.
+func _stand_radius(planet: Node3D, direction: Vector3) -> float:
+	var diameter: Variant = planet.get("target_diameter_meters")
+	var fallback := (float(diameter) * 0.5 if diameter != null else 6.0) + spacecraft_radius
+	if _beaver_director != null and _beaver_director.has_method("get_surface_radius"):
+		return float(
+			_beaver_director.call("get_surface_radius", planet, direction, fallback)
+		) + surface_stand_height
+	return fallback
 
 
 ## Rotate the whole rig so its up-axis leans toward `target_up`. Walking
@@ -1074,6 +1166,19 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 	var ray_origin := camera.project_ray_origin(event.position)
 	var ray_normal := camera.project_ray_normal(event.position)
+	# Standing on a sphere you may be tilted or fully upside down, so the
+	# "intersect the horizontal flight plane" aim below produces nonsense
+	# (or refuses to fire). While landed, aim at the point on the planet
+	# nearest the mouse ray instead — correct at any orientation.
+	if state == FlightState.LANDED and _landed_planet != null:
+		var ship_now := get_spacecraft_world_position()
+		var to_centre := _landed_planet.global_position - ray_origin
+		var closest := ray_origin + ray_normal * maxf(to_centre.dot(ray_normal), 0.0)
+		var aim := closest - ship_now
+		if aim.length() < 0.5:
+			aim = ray_normal
+		_try_fire(ship_now + aim.normalized() * 0.6, aim.normalized())
+		return
 	if absf(ray_normal.y) < 0.0001:
 		return  # looking along the plane; no aim point
 	var distance_to_plane := (start_position.z - ray_origin.y) / ray_normal.y

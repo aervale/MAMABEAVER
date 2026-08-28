@@ -81,8 +81,8 @@ func _ready() -> void:
 	var core_mesh := SphereMesh.new()
 	core_mesh.radius = 0.13
 	core_mesh.height = 0.26
-	core_mesh.radial_segments = 10
-	core_mesh.rings = 5
+	core_mesh.radial_segments = 28
+	core_mesh.rings = 16
 	core_mesh.material = core_material
 
 	_head = MeshInstance3D.new()
@@ -102,8 +102,8 @@ func _ready() -> void:
 	var shell_mesh := SphereMesh.new()
 	shell_mesh.radius = 0.26
 	shell_mesh.height = 0.52
-	shell_mesh.radial_segments = 12
-	shell_mesh.rings = 6
+	shell_mesh.radial_segments = 32
+	shell_mesh.rings = 18
 	shell_mesh.material = shell_material
 
 	_shell = MeshInstance3D.new()
@@ -214,7 +214,10 @@ func _physics_process(delta: float) -> void:
 	if (
 		global_position.x < _play_min.x or global_position.x > _play_max.x
 		or global_position.z < _play_min.y or global_position.z > _play_max.y
-		or global_position.y < 0.0 or global_position.y > 30.0
+		# Generous vertical bounds: walking a sphere puts the player far
+		# above or below the flight plane, and the old 0..30 window killed
+		# bolts the instant they were fired from a pole.
+		or global_position.y < -60.0 or global_position.y > 90.0
 	):
 		queue_free()
 		return

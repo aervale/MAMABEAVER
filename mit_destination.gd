@@ -13,6 +13,11 @@ class_name MITDestination
 ## Lightweight, original interpretation of MIT's Great Dome built entirely
 ## from Godot primitives for predictable Quest performance.
 
+## Downloaded Great Dome mesh (April's Printables OBJ, decimated). When it
+## is present the procedural dome is replaced by it; the colonnade, plinths
+## and asteroid below are still built here.
+const DOME_MODEL_PATH := "res://models/imported/mit_dome.obj"
+
 var _model_root: Node3D
 var _rock: StandardMaterial3D
 var _limestone: StandardMaterial3D
@@ -43,11 +48,15 @@ func _build_model() -> void:
 	# like the rest of this model.
 	for spec in [
 		# [name, radius, position, non-uniform scale]
-		["AsteroidCore", 10.0, Vector3(0.0, -4.2, 0.0), Vector3(1.0, 0.46, 0.78)],
-		["AsteroidLumpA", 4.4, Vector3(7.8, -3.4, 1.6), Vector3(1.0, 0.7, 1.05)],
-		["AsteroidLumpB", 4.0, Vector3(-7.4, -3.6, -1.7), Vector3(1.1, 0.65, 1.0)],
-		["AsteroidLumpC", 3.0, Vector3(1.4, -4.6, -4.6), Vector3(1.0, 0.8, 1.0)],
-		["AsteroidKeel", 2.4, Vector3(-0.6, -8.0, 0.8), Vector3(0.85, 1.7, 0.85)],
+		# A broad, flat-topped island so the campus sits ON something rather
+		# than balancing on a ball, with a tapering keel underneath.
+		["IslandTop", 12.5, Vector3(0.0, -2.6, 0.0), Vector3(1.0, 0.3, 0.86)],
+		["IslandBody", 10.5, Vector3(0.0, -5.0, 0.0), Vector3(1.0, 0.5, 0.86)],
+		["IslandLumpA", 5.0, Vector3(8.6, -4.4, 1.6), Vector3(1.0, 0.62, 1.0)],
+		["IslandLumpB", 4.6, Vector3(-8.2, -4.8, -1.7), Vector3(1.1, 0.58, 1.0)],
+		["IslandLumpC", 3.6, Vector3(1.4, -5.6, -5.2), Vector3(1.0, 0.7, 1.0)],
+		["IslandKeel", 3.4, Vector3(-0.4, -10.5, 0.6), Vector3(0.8, 1.9, 0.8)],
+		["IslandKeelTip", 1.8, Vector3(0.2, -14.5, 0.4), Vector3(0.7, 2.1, 0.7)],
 	]:
 		var rock_radius := spec[1] as float
 		var rock_mesh := SphereMesh.new()
@@ -133,6 +142,8 @@ func _build_model() -> void:
 	dome_mesh.material = _dome_copper
 	var dome := _add_mesh("GreatDome", dome_mesh, Vector3(0, 8.8, 0))
 	dome.scale = Vector3(1.0, 0.62, 1.0)
+	if _install_dome_model(dome):
+		dome.visible = false
 
 	_add_cylinder("LanternBase", 0.8, 0.24, Vector3(0, 10.6, 0), _limestone, 32)
 	_add_cylinder("Lantern", 0.55, 0.5, Vector3(0, 10.98, 0), _glass, 32)
@@ -204,6 +215,46 @@ func _build_model() -> void:
 	beacon_light.omni_range = 10.0
 	beacon_light.shadow_enabled = false
 	_model_root.add_child(beacon_light)
+
+
+## Swap in the imported dome, normalized to sit on the drum. Returns false
+## if the file is missing so the procedural dome stays as the fallback.
+func _install_dome_model(reference: MeshInstance3D) -> bool:
+	if not ResourceLoader.exists(DOME_MODEL_PATH):
+		return false
+	var mesh := load(DOME_MODEL_PATH) as Mesh
+	if mesh == null:
+		push_warning("MITDestination|WARN: dome model failed to load")
+		return false
+
+	var instance := MeshInstance3D.new()
+	instance.name = "GreatDomeModel"
+	instance.mesh = mesh
+	instance.material_override = _dome_copper
+	instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_model_root.add_child(instance)
+
+	# 3D-printing models are almost always authored Z-up, so the dome
+	# arrives lying on its side in Godot's Y-up world. Rotate first, then
+	# measure: fitting the raw bounds put the dome on its face.
+	var upright := Basis(Vector3.RIGHT, -PI * 0.5)
+	var bounds := Transform3D(upright, Vector3.ZERO) * mesh.get_aabb()
+	var widest := maxf(bounds.size.x, bounds.size.z)
+	if widest <= 0.0001:
+		instance.queue_free()
+		return false
+	var target_width := 6.6
+	var uniform := target_width / widest
+	instance.transform = Transform3D(
+		upright.scaled(Vector3.ONE * uniform),
+		Vector3(
+			-bounds.get_center().x * uniform,
+			8.3 - bounds.position.y * uniform,
+			-bounds.get_center().z * uniform
+		)
+	)
+	print("MITDestination|INFO: imported dome fitted to %.1f m" % target_width)
+	return true
 
 
 func _create_materials() -> void:
