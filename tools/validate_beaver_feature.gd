@@ -222,9 +222,16 @@ func _run_checks(scene: Node) -> void:
 		Vector2(planet.global_position.x, planet.global_position.z))
 	_check(clearance > 5.0, "takeoff exits clear of the planet cross-section (%.2f m)" % clearance)
 	if ship_visual != null:
-		ship_visual.call("_update_heading", Vector2.RIGHT, 2.0)
+		# A single update must align exactly with VELOCITY. A smoothed turn can
+		# lag toward the former heading and be mistaken for acceleration-following.
+		var test_velocity := Vector2(3.0, -4.0)
+		ship_visual.call("_update_heading", test_velocity)
 		var ship_forward := -(ship_visual as Node3D).global_basis.z.normalized()
-		_check(ship_forward.dot(Vector3.RIGHT) > 0.99, "visible ship turns into its flight direction")
+		var expected_forward := Vector3(test_velocity.x, 0.0, test_velocity.y).normalized()
+		_check(
+			ship_forward.dot(expected_forward) > 0.9999,
+			"visible ship heading exactly matches velocity, without acceleration-like lag"
+		)
 	await physics_frame
 	_check(int(flight.get("state")) == STATE_FLYING, "takeoff grace prevents instant re-collision")
 	# Firing in flight must add nothing (an absolute count is wrong here:

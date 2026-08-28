@@ -17,9 +17,6 @@ extends Node3D
 class_name SpacecraftVisual
 
 @export_node_path("Node3D") var flight_path: NodePath
-## How quickly the visible hull turns toward its actual travel direction.
-## Only the hull rotates; the XR tracking origin and the player's view do not.
-@export_range(1.0, 20.0, 0.5) var turn_speed := 7.0
 
 # FlightState.LANDED, appended last in spaceship_flight.gd's enum.
 const STATE_LANDED := 4
@@ -34,7 +31,7 @@ func _ready() -> void:
 	_build_ship()
 
 
-func _process(delta: float) -> void:
+func _process(_delta: float) -> void:
 	if _flight == null or _hull_root == null:
 		return
 	# Step out of the ship to collect; climb back in to fly.
@@ -45,7 +42,7 @@ func _process(delta: float) -> void:
 	var throttle := 0.0
 	if velocity is Vector2:
 		throttle = clampf(velocity.length() / 18.0, 0.0, 1.0)
-		_update_heading(velocity, delta)
+		_update_heading(velocity)
 	var pulse := 0.55 + 0.45 * sin(Time.get_ticks_msec() * 0.009)
 	for glow in _engine_glow:
 		var material := glow.get_surface_override_material(0) as StandardMaterial3D
@@ -53,17 +50,16 @@ func _process(delta: float) -> void:
 			material.emission_energy_multiplier = 1.5 + throttle * 6.0 * pulse
 
 
-## Point the ship's nose (-Z) along its velocity. This deliberately rotates
-## SpacecraftVisual in world space instead of turning XROrigin3D, because
-## rotating the player's tracking space during flight would be uncomfortable.
-func _update_heading(logical_velocity: Vector2, delta: float) -> void:
+## Point the ship's nose (-Z) exactly along its current velocity. There is no
+## interpolation here: interpolation made the hull lag behind a turn and look
+## as though it followed thrust/acceleration instead. Near zero speed we keep
+## the last valid heading because velocity direction is undefined there.
+## Only the visual rotates; the player's XR tracking origin remains stable.
+func _update_heading(logical_velocity: Vector2) -> void:
 	if logical_velocity.length_squared() < 0.04:
 		return
 	var forward := Vector3(logical_velocity.x, 0.0, logical_velocity.y).normalized()
-	var desired := Basis.looking_at(forward, Vector3.UP).get_rotation_quaternion()
-	var current := global_basis.orthonormalized().get_rotation_quaternion()
-	var weight := 1.0 - exp(-turn_speed * maxf(delta, 0.0))
-	global_basis = Basis(current.slerp(desired, clampf(weight, 0.0, 1.0)))
+	global_basis = Basis.looking_at(forward, Vector3.UP)
 
 
 func _build_ship() -> void:
