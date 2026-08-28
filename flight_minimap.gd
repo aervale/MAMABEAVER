@@ -9,6 +9,7 @@ class_name FlightMiniMap
 var _flight: Node3D
 var _obstacles: Node3D
 var _black_holes: Node3D
+var _rewards: Node3D
 
 
 func _ready() -> void:
@@ -18,7 +19,7 @@ func _ready() -> void:
 
 
 func _process(_delta: float) -> void:
-	if _flight == null or _obstacles == null or _black_holes == null:
+	if _flight == null or _obstacles == null or _black_holes == null or _rewards == null:
 		_find_scene_nodes()
 	queue_redraw()
 
@@ -33,6 +34,7 @@ func _draw() -> void:
 	_draw_predicted_flow(map_size)
 	_draw_black_holes(map_size)
 	_draw_obstacles(map_size)
+	_draw_rewards(map_size)
 	_draw_destination(map_size)
 	_draw_spacecraft(map_size)
 	draw_rect(Rect2(Vector2.ONE, map_size - Vector2.ONE * 2.0), Color(0.28, 0.62, 0.96, 0.9), false, 2.0)
@@ -118,7 +120,7 @@ func _draw_obstacles(map_size: Vector2) -> void:
 		if collision_radius_squared > 0.0:
 			var collision_radius_pixels := sqrt(collision_radius_squared) * pixels_per_meter
 			draw_arc(center, collision_radius_pixels, 0.0, TAU, 32, Color(0.72, 1.0, 0.28, 0.95), 1.5)
-		_draw_body_id(center, "P" + String(obstacle.name).trim_prefix("Planet"), Color(0.55, 1.0, 0.67))
+		_draw_body_id(center, String(obstacle.name).trim_prefix("Planet"), Color(0.55, 1.0, 0.67))
 
 
 func _draw_black_holes(map_size: Vector2) -> void:
@@ -168,7 +170,27 @@ func _draw_black_holes(map_size: Vector2) -> void:
 			var capture_pixels := sqrt(collision_radius_squared) * pixels_per_meter
 			draw_circle(center, capture_pixels, Color(0.0, 0.0, 0.015, 1.0))
 			draw_arc(center, capture_pixels, 0.0, TAU, 32, Color(1.0, 0.08, 0.22, 1.0), 2.0)
-		_draw_body_id(center, "B" + String(black_hole.name).trim_prefix("BlackHole"), Color(1.0, 0.5, 0.52))
+		_draw_body_id(center, String(black_hole.name).trim_prefix("BlackHole"), Color(1.0, 0.5, 0.52))
+
+
+func _draw_rewards(map_size: Vector2) -> void:
+	if _rewards == null:
+		return
+	var pixels_per_meter := minf(
+		map_size.x / (map_max.x - map_min.x),
+		map_size.y / (map_max.y - map_min.y)
+	)
+	for child in _rewards.get_children():
+		var reward := child as Node3D
+		if reward == null or bool(reward.get("is_collected")):
+			continue
+		var center := _world_to_map(Vector2(reward.global_position.x, reward.global_position.z), map_size)
+		var radius_pixels := maxf(4.0, float(reward.get("detection_radius")) * pixels_per_meter)
+		var pulse := 1.0 + sin(Time.get_ticks_msec() * 0.006 + float(String(reward.name).hash() % 10)) * 0.12
+		draw_circle(center, radius_pixels, Color(0.08, 1.0, 0.3, 0.14))
+		draw_arc(center, radius_pixels * pulse, 0.0, TAU, 24, Color(0.16, 1.0, 0.38, 0.96), 1.8)
+		draw_circle(center, 2.8, Color(0.7, 1.0, 0.76, 1.0))
+		_draw_body_id(center, String(reward.name), Color(0.48, 1.0, 0.58))
 
 
 func _draw_body_id(center: Vector2, body_id: String, color: Color) -> void:
@@ -232,6 +254,7 @@ func _draw_readout(map_size: Vector2) -> void:
 	var maximum_fuel_value := 0.0
 	var fuel_ratio := 0.0
 	var flow_text := "FLOW  --"
+	var rewards_text := "R --/--"
 	if _flight != null:
 		var coordinates := _get_flight_coordinates()
 		coordinate_text = "XY  %.1f, %.1f" % [coordinates.x, coordinates.y]
@@ -241,6 +264,11 @@ func _draw_readout(map_size: Vector2) -> void:
 			fuel_ratio = float(_flight.call("get_fuel_ratio"))
 		if _flight.has_method("get_predicted_flow_result"):
 			flow_text = "FLOW φ(t) · %s" % String(_flight.call("get_predicted_flow_result"))
+		if _flight.has_method("get_rewards_collected") and _flight.has_method("get_total_reward_count"):
+			rewards_text = "R %d/%d" % [
+				int(_flight.call("get_rewards_collected")),
+				int(_flight.call("get_total_reward_count")),
+			]
 
 	var readout_height := float(font_size + 10)
 	var left_width := map_size.x * 0.52 - 9.0
@@ -278,8 +306,9 @@ func _draw_readout(map_size: Vector2) -> void:
 		flow_color = Color(1.0, 0.28, 0.24, 0.98)
 	elif flow_result == "GOAL":
 		flow_color = Color(0.22, 1.0, 0.48, 0.98)
-	draw_rect(Rect2(6, map_size.y - font_size - 18.0, minf(190.0, map_size.x - 48.0), font_size + 10.0), Color(0.01, 0.02, 0.05, 0.82))
-	draw_string(font, Vector2(12, map_size.y - 10.0), flow_text, HORIZONTAL_ALIGNMENT_LEFT, -1.0, font_size, flow_color)
+	var status_text := "%s · %s" % [rewards_text, flow_text]
+	draw_rect(Rect2(6, map_size.y - font_size - 18.0, map_size.x - 48.0, font_size + 10.0), Color(0.01, 0.02, 0.05, 0.82))
+	draw_string(font, Vector2(12, map_size.y - 10.0), status_text, HORIZONTAL_ALIGNMENT_LEFT, -1.0, font_size, flow_color)
 	draw_string(font, Vector2(map_size.x - 32, map_size.y - 8), "X", HORIZONTAL_ALIGNMENT_LEFT, -1.0, font_size, Color(0.45, 0.76, 1.0))
 	draw_string(font, Vector2(8, font_size * 2.5), "Y", HORIZONTAL_ALIGNMENT_LEFT, -1.0, font_size, Color(0.45, 0.76, 1.0))
 
@@ -304,3 +333,4 @@ func _find_scene_nodes() -> void:
 	_flight = scene.get_node_or_null("XROrigin3D") as Node3D
 	_obstacles = scene.get_node_or_null("MoonExhibit") as Node3D
 	_black_holes = scene.get_node_or_null("BlackHoleExhibit") as Node3D
+	_rewards = scene.get_node_or_null("RewardPoints") as Node3D

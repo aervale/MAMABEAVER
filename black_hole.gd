@@ -9,7 +9,7 @@ const DISK_SHADER := preload("res://black_hole_disk.gdshader")
 
 @export_group("Imported model")
 @export var model_scene: PackedScene
-@export_range(4.0, 40.0, 0.5) var visual_diameter_meters := 18.0
+@export_range(2.0, 40.0, 0.1) var visual_diameter_meters := 18.0
 @export var hide_embedded_planet := true
 
 @export_group("Physics")
@@ -19,7 +19,7 @@ const DISK_SHADER := preload("res://black_hole_disk.gdshader")
 @export_range(1.0, 100.0, 1.0) var maximum_acceleration := 25.0
 
 @export_group("Visuals")
-@export_range(4.0, 20.0, 0.5) var accretion_disk_radius := 9.0
+@export_range(1.0, 20.0, 0.1) var accretion_disk_radius := 9.0
 @export_range(-90.0, 90.0, 1.0) var disk_tilt_degrees := 24.0
 @export_range(-45.0, 45.0, 1.0) var disk_roll_degrees := -12.0
 @export_range(-30.0, 30.0, 0.5) var disk_rotation_degrees_per_second := 5.0

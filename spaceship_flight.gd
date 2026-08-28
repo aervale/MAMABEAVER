@@ -27,6 +27,7 @@ const RESTART_BUTTONS: Array[StringName] = [
 @export_node_path("XRCamera3D") var flight_camera_path: NodePath
 @export_node_path("Node3D") var obstacles_root_path: NodePath
 @export_node_path("Node3D") var black_holes_root_path: NodePath
+@export_node_path("Node3D") var rewards_root_path: NodePath
 @export_node_path("Label3D") var vr_status_path: NodePath
 @export_node_path("Label") var desktop_status_path: NodePath
 
@@ -37,7 +38,7 @@ const RESTART_BUTTONS: Array[StringName] = [
 
 @export_group("Gameplay constants")
 ## C in the planet-gravity equation: acceleration = C * radius^3 / distance^2.
-@export_range(0.0, 5.0, 0.05) var gravity_constant_c := 1.2
+@export_range(0.0, 20.0, 0.05) var gravity_constant_c := 1.2
 ## a: spacecraft acceleration at full joystick input, in world units/s^2.
 @export_range(1.0, 40.0, 0.5) var spacecraft_acceleration_a := 12.0
 
@@ -51,6 +52,9 @@ const RESTART_BUTTONS: Array[StringName] = [
 @export_group("Fuel")
 @export_range(1.0, 1000.0, 1.0) var maximum_fuel := 100.0
 @export_range(0.0, 100.0, 0.5) var fuel_burn_per_second := 8.0
+
+@export_group("Score")
+@export_range(0, 5000, 10) var maximum_fuel_bonus := 300
 
 @export_group("Planet gravity")
 ## Safety cap only affects pathological positions inside a planet.
@@ -69,6 +73,9 @@ var velocity := Vector2.ZERO
 var gravity_acceleration := Vector2.ZERO
 var crash_message := "COLLISION"
 var fuel := 100.0
+var rewards_collected := 0
+var reward_score := 0
+var final_score := 0
 
 ## Logical XY points sampled from the RK4 approximation of the ODE flow.
 var predicted_flow_points := PackedVector2Array()
@@ -81,6 +88,7 @@ var _right_controller: XRController3D
 var _flight_camera: XRCamera3D
 var _obstacles_root: Node3D
 var _black_holes_root: Node3D
+var _rewards_root: Node3D
 var _vr_status: Label3D
 var _desktop_status: Label
 var _start_was_pressed := false
@@ -95,6 +103,7 @@ func _ready() -> void:
 	_flight_camera = get_node_or_null(flight_camera_path) as XRCamera3D
 	_obstacles_root = get_node_or_null(obstacles_root_path) as Node3D
 	_black_holes_root = get_node_or_null(black_holes_root_path) as Node3D
+	_rewards_root = get_node_or_null(rewards_root_path) as Node3D
 	_vr_status = get_node_or_null(vr_status_path) as Label3D
 	_desktop_status = get_node_or_null(desktop_status_path) as Label
 	for controller in [_left_controller, _right_controller]:
@@ -128,12 +137,14 @@ func _physics_process(delta: float) -> void:
 			velocity = velocity.normalized() * flight_speed
 		_move_spacecraft(delta)
 
+		_check_reward_collection()
 		_check_obstacle_collisions()
 		if state == FlightState.FLYING and get_spacecraft_world_position().distance_to(_logical_to_world(destination)) <= arrival_radius:
 			state = FlightState.ARRIVED
 			velocity = Vector2.ZERO
+			final_score = _calculate_final_score()
 			_pulse_controllers(0.45, 0.5)
-			print("SpacecraftFlight|INFO: destination reached")
+			print("SpacecraftFlight|INFO: destination reached; final score=%d" % final_score)
 	else:
 		_last_flight_input = Vector2.ZERO
 
@@ -151,6 +162,10 @@ func reset_flight() -> void:
 	gravity_acceleration = Vector2.ZERO
 	crash_message = "COLLISION"
 	fuel = maximum_fuel
+	rewards_collected = 0
+	reward_score = 0
+	final_score = 0
+	_reset_rewards()
 	_last_flight_input = Vector2.ZERO
 	_prediction_elapsed = 0.0
 	global_position = _logical_to_world(start_position)
@@ -412,6 +427,41 @@ func _check_obstacle_collisions() -> void:
 	print("SpacecraftFlight|INFO: %s" % collision_message)
 
 
+func _check_reward_collection() -> void:
+	if _rewards_root == null:
+		return
+	var ship_position := get_spacecraft_world_position()
+	for child in _rewards_root.get_children():
+		var reward := child as Node3D
+		if reward == null or not reward.has_method("collect") or bool(reward.get("is_collected")):
+			continue
+		var detection_radius := float(reward.get("detection_radius"))
+		if ship_position.distance_to(reward.global_position) > detection_radius + spacecraft_radius:
+			continue
+		var points := int(reward.call("collect"))
+		if points <= 0:
+			continue
+		rewards_collected += 1
+		reward_score += points
+		_pulse_controllers(0.55, 0.16)
+		print(
+			"SpacecraftFlight|INFO: collected %s (%d/%d, score=%d)"
+			% [reward.name, rewards_collected, get_total_reward_count(), reward_score]
+		)
+
+
+func _reset_rewards() -> void:
+	if _rewards_root == null:
+		return
+	for child in _rewards_root.get_children():
+		if child.has_method("reset_reward"):
+			child.call("reset_reward")
+
+
+func _calculate_final_score() -> int:
+	return reward_score + roundi(get_fuel_ratio() * float(maximum_fuel_bonus))
+
+
 func _is_restart_pressed() -> bool:
 	if Input.is_key_pressed(KEY_R):
 		return true
@@ -458,13 +508,26 @@ func _update_status() -> void:
 	var message: String
 	match state:
 		FlightState.WAITING:
-			message = "GRAVITY FIELD DISENGAGED\nPress B or Y to start"
+			message = "GRAVITY FIELD DISENGAGED\nREWARD %d/%d · Press B or Y to start" % [
+				rewards_collected,
+				get_total_reward_count(),
+			]
 		FlightState.CRASHED:
-			message = "%s\nPress A/X or trigger to restart" % crash_message
+			message = "%s\nREWARD %d/%d · Press A/X or trigger to restart" % [
+				crash_message,
+				rewards_collected,
+				get_total_reward_count(),
+			]
 		FlightState.ARRIVED:
-			message = "DESTINATION REACHED\nPress A/X or trigger to fly again"
+			message = "DESTINATION REACHED · SCORE %d\nREWARD %d/%d · FUEL %.0f/%.0f\nPress A/X or trigger to fly again" % [
+				final_score,
+				rewards_collected,
+				get_total_reward_count(),
+				fuel,
+				maximum_fuel,
+			]
 		_:
-			message = "POS %.1f, %.1f   ALT %.0f\nSPD %.1f   GRAV %.2f   FUEL %.0f/%.0f\nGOAL %.0f, %.0f   DIST %.1f" % [
+			message = "POS %.1f, %.1f   ALT %.0f\nSPD %.1f   GRAV %.2f\nFUEL %.0f/%.0f   REWARD %d/%d   SCORE %d\nGOAL %.0f, %.0f   DIST %.1f" % [
 				logical_position.x,
 				logical_position.y,
 				logical_position.z,
@@ -472,6 +535,9 @@ func _update_status() -> void:
 				gravity_acceleration.length(),
 				fuel,
 				maximum_fuel,
+				rewards_collected,
+				get_total_reward_count(),
+				reward_score,
 				destination.x,
 				destination.y,
 				distance_left,
@@ -479,11 +545,23 @@ func _update_status() -> void:
 	if _vr_status != null:
 		_vr_status.text = message
 	if _desktop_status != null:
-		_desktop_status.text = message.replace("\n", "  ·  ")
+		_desktop_status.text = message
 
 
 func get_fuel_ratio() -> float:
 	return clampf(fuel / maxf(maximum_fuel, 0.0001), 0.0, 1.0)
+
+
+func get_total_reward_count() -> int:
+	return _rewards_root.get_child_count() if _rewards_root != null else 0
+
+
+func get_rewards_collected() -> int:
+	return rewards_collected
+
+
+func get_display_score() -> int:
+	return final_score if state == FlightState.ARRIVED else reward_score
 
 
 func is_waiting_to_start() -> bool:
