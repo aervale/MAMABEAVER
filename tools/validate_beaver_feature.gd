@@ -253,9 +253,26 @@ func _run_checks(scene: Node) -> void:
 	var expected_touchdown_radius := float(
 		flight.call("_stand_radius", planet, touchdown_direction)
 	)
+	var sampled_surface_radius := float(
+		director.call(
+			"get_surface_radius",
+			planet,
+			touchdown_direction,
+			physical_contact
+		)
+	)
 	_check(
 		absf(touchdown_target.distance_to(planet.global_position) - expected_touchdown_radius) < 0.05,
 		"touchdown target uses the real moon surface instead of its oversized collision shell"
+	)
+	_check(
+		float(flight.get("surface_stand_height")) <= 0.15
+		and absf(
+			expected_touchdown_radius
+			- sampled_surface_radius
+			- float(flight.get("surface_stand_height"))
+		) < 0.02,
+		"XR floor origin gets only a small surface clearance; tracked camera supplies eye height"
 	)
 	_check(
 		is_equal_approx(float(flight.get("fuel")), float(flight.get("maximum_fuel"))),

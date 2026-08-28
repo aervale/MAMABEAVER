@@ -167,10 +167,11 @@ const MAP_EXPAND_BUTTONS: Array[StringName] = [
 ## How long the touchdown glide takes. Snapping straight onto the surface
 ## was the disorienting part of landing, so the ship now eases in.
 @export_range(0.0, 4.0, 0.1) var landing_animation_seconds := 1.4
-## Eye height above the rock while walking. The collision radius sits well
-## outside the visible mesh, so standing on it left the player hovering
-## metres above the beavers.
-@export_range(0.0, 4.0, 0.1) var surface_stand_height := 1.2
+## Small clearance between the XR tracking origin (the player's FLOOR) and
+## the sampled rock surface. Do not put eye height here: OpenXR already gives
+## XRCamera3D the player's real tracked head height. Adding 1.2 m here used to
+## double-count that height and left the view floating above the Beavers.
+@export_range(0.0, 1.0, 0.01) var surface_stand_height := 0.08
 ## Footprints left behind while walking, so a planet you have already
 ## combed reads as visited. Capped per planet to bound the node count.
 @export_range(0, 400, 10) var max_footprints_per_planet := 120
