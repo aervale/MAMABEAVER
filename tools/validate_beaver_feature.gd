@@ -53,6 +53,9 @@ func _run_checks(scene: Node) -> void:
 	var vr_guide := scene.get_node_or_null(
 		"XROrigin3D/XRCamera3D/FlightHUD/GuideViewport/StartControlsGuide"
 	)
+	var vr_guide_display := scene.get_node_or_null(
+		"XROrigin3D/XRCamera3D/FlightHUD/StartGuideDisplay"
+	) as MeshInstance3D
 	_check(flight != null, "XROrigin3D must exist")
 	_check(director != null, "BeaverExhibit must exist")
 	_check(
@@ -82,6 +85,13 @@ func _run_checks(scene: Node) -> void:
 		and bool(desktop_guide.call("is_showing"))
 		and bool(vr_guide.call("is_showing")),
 		"English controls guide appears on the desktop and XR start screens"
+	)
+	_check(
+		is_equal_approx((desktop_guide as Control).anchor_left, 0.5)
+		and vr_guide_display != null
+		and absf(vr_guide_display.position.x) < 0.001
+		and (vr_guide_display.mesh as QuadMesh).size.x >= 0.77,
+		"start guide is centred and enlarged for headset readability"
 	)
 	_check(
 		comfort_vignette != null and comfort_vignette.has_method("get_strength"),
@@ -184,7 +194,7 @@ func _run_checks(scene: Node) -> void:
 	)
 	_check(String(flight.call("get_predicted_flow_result")) == "LANDED", "predictor reports LANDED")
 
-	# --- firing is landed-only, capped, and spawns MagicBolt nodes ---
+	# --- landed firing can capture, is capped, and spawns MagicBolt nodes ---
 	# Tangential shot along the surface: this is the normal case, and the
 	# planet you stand on must not swallow it.
 	var muzzle: Vector3 = flight.call("get_spacecraft_world_position")
@@ -199,6 +209,10 @@ func _run_checks(scene: Node) -> void:
 	_check(
 		skimmer != null and (skimmer as MagicBolt).ignored_planet == planet,
 		"the bolt ignores the planet the player is standing on"
+	)
+	_check(
+		skimmer != null and (skimmer as MagicBolt).can_capture_beavers,
+		"a bolt fired while landed is capture-enabled"
 	)
 	_check(
 		skimmer == prewarmed_bolt and flight.get("_prewarmed_bolt") == null,
@@ -382,6 +396,37 @@ func _run_checks(scene: Node) -> void:
 		clearance >= expected_clearance - 0.01,
 		"takeoff includes the full safety margin (%.2f / %.2f m)" % [clearance, expected_clearance]
 	)
+
+	# Trigger remains responsive during flight, but the bolt's launch-time
+	# permission must prevent it from collecting a nearby beaver. Clear older
+	# landed shots first so they cannot produce an unrelated capture this frame.
+	var old_bolts: Array = flight.get("_live_bolts")
+	for old_bolt in old_bolts:
+		if is_instance_valid(old_bolt):
+			old_bolt.queue_free()
+	old_bolts.clear()
+	await process_frame
+	var air_target: Node3D = director.call("find_beaver_near", planet.global_position, 20.0)
+	var cargo_before_air_shot := int(director.call("get_cargo_count"))
+	if air_target != null:
+		var outward := (air_target.global_position - planet.global_position).normalized()
+		var tangent := outward.cross(Vector3.UP)
+		if tangent.length() < 0.01:
+			tangent = outward.cross(Vector3.RIGHT)
+		flight.call("_try_fire", air_target.global_position + outward, tangent.normalized())
+	var air_bolts: Array = flight.get("_live_bolts")
+	var air_bolt: MagicBolt = null
+	if not air_bolts.is_empty():
+		air_bolt = air_bolts.back() as MagicBolt
+	_check(
+		air_target != null and air_bolt != null and not air_bolt.can_capture_beavers,
+		"trigger fires in flight and marks the airborne bolt non-capturing"
+	)
+	await physics_frame
+	_check(
+		int(director.call("get_cargo_count")) == cargo_before_air_shot,
+		"an airborne bolt passing within hit radius cannot catch a beaver"
+	)
 	if ship_visual != null:
 		# A single update must align exactly with VELOCITY. A smoothed turn can
 		# lag toward the former heading and be mistaken for acceleration-following.
@@ -405,11 +450,13 @@ func _run_checks(scene: Node) -> void:
 		int(flight.get("state")) == STATE_FLYING,
 		"takeoff remains clear after the grace period"
 	)
-	# Firing in flight must add nothing (an absolute count is wrong here:
-	# earlier landed shots are legitimately still in the air).
-	var bolts_before := _count_bolts(scene)
+	# Air firing remains available after the takeoff grace window as well.
+	var air_shot_sounds_before := int(game_sfx.call("get_play_count", &"trigger_shot"))
 	flight.call("_try_fire", Vector3.ZERO, Vector3(1, 0, 0))
-	_check(_count_bolts(scene) == bolts_before, "cannot fire while flying")
+	_check(
+		int(game_sfx.call("get_play_count", &"trigger_shot")) == air_shot_sounds_before + 1,
+		"trigger continues to fire while flying after takeoff grace"
+	)
 
 	# --- impact warning fires on a fast approach, stays quiet on a slow one ---
 	flight.call("reset_flight")

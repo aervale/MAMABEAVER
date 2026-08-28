@@ -70,12 +70,14 @@ func _process(_delta: float) -> void:
 	if _results_control == null or _guide_control == null:
 		return
 	var results_showing := _results_control.is_showing()
-	_hud_display.visible = not results_showing
 	_results_display.visible = results_showing
 	_results_viewport.render_target_update_mode = (
 		SubViewport.UPDATE_ALWAYS if results_showing else SubViewport.UPDATE_DISABLED
 	)
 	var guide_showing := _guide_control.is_showing() and not results_showing
+	# On the start screen the large centred manual replaces the narrow status
+	# strip, avoiding overlapping text and improving headset readability.
+	_hud_display.visible = not results_showing and not guide_showing
 	_guide_display.visible = guide_showing
 	if guide_showing and not _guide_was_showing:
 		_guide_viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
@@ -120,7 +122,7 @@ func _build_results_display() -> void:
 	add_child(_results_display)
 
 
-## English instructions sit left of the centre view only on the start screen.
+## English instructions sit directly in the centre view on the start screen.
 ## The texture is static and updates once per appearance, keeping its normal
 ## in-game Quest rendering cost at zero.
 func _build_start_guide() -> void:
@@ -140,7 +142,7 @@ func _build_start_guide() -> void:
 	_guide_viewport.add_child(_guide_control)
 
 	var quad_mesh := QuadMesh.new()
-	quad_mesh.size = Vector2(0.53, 0.53 * float(guide_size.y) / float(guide_size.x))
+	quad_mesh.size = Vector2(0.78, 0.78 * float(guide_size.y) / float(guide_size.x))
 	var material := StandardMaterial3D.new()
 	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
@@ -152,7 +154,7 @@ func _build_start_guide() -> void:
 
 	_guide_display = MeshInstance3D.new()
 	_guide_display.name = "StartGuideDisplay"
-	_guide_display.position = Vector3(-0.62, 0.34, -0.04)
+	_guide_display.position = Vector3(0.0, 0.34, -0.04)
 	_guide_display.mesh = quad_mesh
 	_guide_display.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(_guide_display)

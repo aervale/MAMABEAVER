@@ -11,7 +11,7 @@ gravity fields and collision volumes of ten planets and five black holes.
 - Quest `B/Y`, or desktop `B/Y`: engage gravity and begin flight from the
   initial waiting state.
 - A/X or desktop `R`: restart after collision, capture, or arrival.
-- Trigger while landed: fire a magic bolt along the controller's OpenXR aim ray.
+- Trigger in flight or while landed: fire along the OpenXR aim ray; only landed shots catch Beavers.
 - Fuel starts at `100` and full thrust consumes `8` units per second.
 - Coasting consumes no fuel; gravity and inertia continue to move the ship.
 - The 3D floor mesh and floor collision are removed for an open-space view.
@@ -19,7 +19,7 @@ gravity fields and collision volumes of ten planets and five black holes.
 - The upper-right minimap is shared by desktop and in-headset displays.
 - Land on planets and shoot Beaver targets; delivering 20 to MIT wins.
 - Victory opens a shared desktop/XR results screen with Beaver points, remaining-fuel bonus, mission rank, and total score.
-- The start screen includes an English controls and mission guide on the left side of the view.
+- The start screen includes a large English controls and mission guide in the centre of the view.
 - Original procedural cues play for firing, Beaver capture, MIT deposit, and victory.
 
 At startup and after a reset, the spacecraft is stationary, gravity is not

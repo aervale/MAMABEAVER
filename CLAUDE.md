@@ -76,10 +76,10 @@ altitude (`√(R² − dz²)`).
 | `mit_destination.gd` | Goal landmark: primitives-only MIT dome on an asteroid. Visual only. |
 | `flight_minimap.gd` | Neon HUD tactical map (`_draw()`-based): bodies, flow line, fuel bar, beaver counts, expand-mode info cards. |
 | `beaver_director.gd` / `beaver.gd` | Beaver spawning/mission state; one collectible critter. |
-| `magic_bolt.gd` | Gravity-nudged collection projectile (landed-only). |
+| `magic_bolt.gd` | Gravity-nudged projectile; airborne shots cannot collect Beavers. |
 | `game_sfx.gd` | Original procedural firing, collection, deposit, and victory cues. |
 | `mission_results.gd` | Shared desktop/XR `VICTORY!` settlement screen and score presentation. |
-| `start_controls_guide.gd` | English quick-start controls card shown left of the WAITING screen. |
+| `start_controls_guide.gd` | Large English quick-start controls card centred on the WAITING screen. |
 | `surface_dust.gd` | Self-freeing one-shot dust puff (landing + footsteps). |
 | `black_hole_lens.gdshader` | Screen-space gravitational lensing shell (layer 1). |
 | `black_hole_cloud.gdshader` | Translucent swirling gas cloud (layer 2). |
@@ -103,12 +103,12 @@ things silently): `XROrigin3D`, `MoonExhibit`, `BlackHoleExhibit`, `SceneryExhib
 
 - **Desktop:** open in Godot 4.7.2, press F5. B/Y starts the run (and
   launches off planets), WASD flies, slow-touch a planet to land,
-  right-click fires magic bolts while landed, mouse-drag orbits, R restarts,
+  right-click fires magic bolts (capture requires landing), mouse-drag orbits, R restarts,
   Esc quits. macOS never attempts OpenXR (platform override).
 - **Quest:** Android preset `Meta Quest 3` in `export_presets.cfg`; needs the
   `addons/godotopenxrvendors` plugin + Android export templates. One-click
   deploy or export APK. In-headset: B/Y starts/launches, trigger fires
-  magic bolts while landed, A/X restarts (trigger no longer restarts).
+  magic bolts in flight or while landed (capture requires landing), A/X restarts.
 
 ## Gotchas
 

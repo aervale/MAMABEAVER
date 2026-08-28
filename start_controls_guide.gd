@@ -2,7 +2,7 @@
 # start_controls_guide.gd — English quick-start card shown only in WAITING.
 #
 # The same Control is used in the desktop CanvasLayer and in an XR
-# SubViewport. It stays on the left side of the start view, disappears as
+# SubViewport. It stays in the centre of the start view, disappears as
 # soon as B/Y begins the run, and returns after a reset.
 # =============================================================================
 extends Control
@@ -72,7 +72,7 @@ func _draw() -> void:
 	var rows := [
 		["B / Y", "START  /  TAKE OFF"],
 		["LEFT STICK", "FLY  /  WALK ON PLANETS"],
-		["TRIGGER", "FIRE CAPTURE BOLT (LANDED)"],
+		["TRIGGER", "FIRE BOLT · CAPTURE WHEN LANDED"],
 		["GRIP", "HOLD TO EXPAND MAP"],
 		["A / X", "RESTART AFTER CRASH / VICTORY"],
 	]

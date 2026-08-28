@@ -30,8 +30,9 @@
 # is wherever you are looking, flattened to the horizon. WASD is a
 # desktop-testing convenience. B/Y engages the gravity field (starts
 # flight) and, while LANDED, launches you off the planet. TRIGGER fires a
-# magic bolt (only while LANDED); it is deliberately NOT a restart button
-# anymore — restart is A/X or the R key. Desktop fire = right-click (left
+# magic bolt in flight or on a planet, but only LANDED shots collect beavers;
+# it is deliberately NOT a restart button anymore. Restart is A/X or R.
+# Desktop fire = right-click (left
 # is the orbit drag). Thrust burns FUEL (fuel_burn_per_second, scaled by
 # stick deflection); an empty tank leaves only gravity, drag, and momentum.
 #
@@ -51,9 +52,9 @@
 #     BeaverExhibit in the scene, arrival = win, like the pre-beaver game.
 # End states zero velocity, pulse haptics, and wait for restart (A/X, R).
 #
-# BEAVER COLLECTION: while LANDED, trigger/right-click fires a MagicBolt
-# (see magic_bolt.gd) curved by this controller's own gravity field. Bolt
-# hits hand beavers to the BeaverDirector, which tractors them aboard.
+# BEAVER COLLECTION: trigger/right-click always fires a MagicBolt (see
+# magic_bolt.gd), but only bolts launched while LANDED can hand hit beavers
+# to the BeaverDirector for tractor collection.
 #
 # FLOW PREDICTION: a few times per second, _update_predicted_flow() runs an
 # RK4 integration of the flight ODE (thrust held + gravity - drag) for
@@ -1374,11 +1375,10 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 func _try_fire(origin: Vector3, direction: Vector3) -> void:
-	# Bolts are a landed-only tool: collection happens ON planets, per spec.
-	if state != FlightState.LANDED or _takeoff_elapsed >= 0.0:
-		# Silent failure reads as a broken button; say why.
-		if state == FlightState.FLYING:
-			_set_banner("LAND ON A PLANET TO FIRE", 1.5)
+	# Firing is available in flight and while safely standing on a planet.
+	# WAITING/end states and the protected takeoff animation remain inert.
+	var fired_while_landed := state == FlightState.LANDED and _takeoff_elapsed < 0.0
+	if not (state == FlightState.FLYING or fired_while_landed):
 		return
 	_live_bolts = _live_bolts.filter(func(bolt): return is_instance_valid(bolt))
 	if _live_bolts.size() >= max_live_bolts:
@@ -1411,7 +1411,8 @@ func _try_fire(origin: Vector3, direction: Vector3) -> void:
 	bolt.velocity = direction.normalized() * bolt_speed
 	bolt.hit_radius = bolt_hit_radius
 	bolt.gravity_scale = bolt_gravity_scale
-	bolt.ignored_planet = _landed_planet
+	bolt.can_capture_beavers = fired_while_landed
+	bolt.ignored_planet = _landed_planet if fired_while_landed else null
 	bolt.setup(self, _beaver_director, _obstacles_root, _black_holes_root, play_area_min, play_area_max)
 	if bolt.get_parent() == null:
 		get_tree().current_scene.add_child(bolt)

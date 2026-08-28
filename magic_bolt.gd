@@ -1,7 +1,8 @@
 # =============================================================================
 # magic_bolt.gd — the beaver-collecting projectile. Spawned into the scene
-# root by spaceship_flight.gd's _try_fire() (VR trigger while LANDED, or
-# desktop right-click); at most max_live_bolts exist at once.
+# root by spaceship_flight.gd's _try_fire() (VR trigger or desktop
+# right-click); at most max_live_bolts exist at once. Airborne shots are
+# visual only; only bolts fired while LANDED can collect beavers.
 #
 # Its HORIZONTAL velocity is nudged every tick by the same gravity field
 # the ship feels — via the flight controller's get_total_gravity_at() — so
@@ -34,6 +35,9 @@ var velocity := Vector3.ZERO
 var hit_radius := 2.0
 ## Fraction of real gravity applied to the bolt. 0 = laser, 1 = full field.
 var gravity_scale := 0.0
+## Snapshot of the ship state at launch. An airborne shot must remain unable
+## to collect even if the ship lands before the projectile reaches a beaver.
+var can_capture_beavers := true
 ## The planet the shooter is standing on. Skipped by the splash test so
 ## surface-skimming shots reach the beavers instead of being absorbed.
 var ignored_planet: Node3D = null
@@ -279,7 +283,7 @@ func _physics_process(delta: float) -> void:
 				return
 
 	# The payoff: connect with a beaver.
-	if _director != null and _director.has_method("find_beaver_near"):
+	if can_capture_beavers and _director != null and _director.has_method("find_beaver_near"):
 		var beaver: Node3D = _director.call("find_beaver_near", global_position, hit_radius)
 		if beaver != null:
 			_director.call("begin_tractor", beaver, _flight)
