@@ -191,6 +191,58 @@ func _run_checks(scene: Node) -> void:
 		not bool(desktop_guide.call("is_showing")) and not bool(vr_guide.call("is_showing")),
 		"controls guide hides after the run starts"
 	)
+
+	# A realistic low-frame-rate grazing step can have both endpoints outside
+	# the contact shell while the movement segment crosses it. It must land,
+	# and exactly the advertised threshold speed is still safe.
+	var physical_contact := (
+		float(planet.get("target_diameter_meters")) * 0.5
+		+ float(flight.get("spacecraft_radius"))
+	)
+	var assisted_contact := physical_contact + float(flight.get("landing_assist_margin"))
+	var flight_plane_y := float(flight.get("start_position").z)
+	var plane_offset := flight_plane_y - planet.global_position.y
+	var assisted_ring := sqrt(assisted_contact * assisted_contact - plane_offset * plane_offset)
+	var grazing_start := Vector3(
+		planet.global_position.x - 0.08,
+		flight_plane_y,
+		planet.global_position.z + assisted_ring - 0.0001
+	)
+	var grazing_end := Vector3(
+		planet.global_position.x + 0.08,
+		flight_plane_y,
+		planet.global_position.z + assisted_ring - 0.0001
+	)
+	_check(
+		grazing_start.distance_to(planet.global_position) > assisted_contact
+		and grazing_end.distance_to(planet.global_position) > assisted_contact,
+		"grazing regression starts with both frame endpoints outside contact"
+	)
+	(flight as Node3D).global_position = grazing_end
+	flight.set("velocity", Vector2(float(flight.get("landing_speed_threshold")), 0.0))
+	flight.call("_check_obstacle_collisions", grazing_start)
+	_check(
+		int(flight.get("state")) == STATE_LANDED,
+		"swept contact lands at exactly the safe-speed threshold"
+	)
+	flight.call("reset_flight")
+	flight.call("start_flight")
+
+	# A stationary point in the small assist-only shell should settle onto the
+	# planet instead of requiring pixel-perfect physical overlap.
+	var physical_ring := sqrt(physical_contact * physical_contact - plane_offset * plane_offset)
+	var assist_probe := Vector3(
+		planet.global_position.x,
+		flight_plane_y,
+		planet.global_position.z + physical_ring + float(flight.get("landing_assist_margin")) * 0.35
+	)
+	(flight as Node3D).global_position = assist_probe
+	flight.set("velocity", Vector2.ZERO)
+	flight.call("_check_obstacle_collisions", assist_probe)
+	_check(int(flight.get("state")) == STATE_LANDED, "low-speed landing assist accepts a near contact")
+	flight.call("reset_flight")
+	flight.call("start_flight")
+
 	flight.set("fuel", 10.0)
 	_teleport(flight, planet.global_position + Vector3(-5.7, 0.0, 0.0), Vector2(1.0, 0.0))
 	await physics_frame

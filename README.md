@@ -18,6 +18,7 @@ gravity fields and collision volumes of ten planets and five black holes.
 - The logical flight boundary is `X/Y=-20..220` and is enforced in code.
 - The upper-right minimap is shared by desktop and in-headset displays.
 - Land on planets and shoot Beaver targets; delivering 20 to MIT wins.
+- Landing uses swept contact detection plus a small low-speed assist shell, so grazing safe approaches do not miss between frames.
 - Victory opens a shared desktop/XR results screen with Beaver points, remaining-fuel bonus, mission rank, and total score.
 - The start screen includes a large English controls and mission guide in the centre of the view.
 - In XR the spacecraft visual is position-locked to the tracked headset, preventing room-scale movement from separating the cockpit and player.

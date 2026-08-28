@@ -138,6 +138,10 @@ const MAP_EXPAND_BUTTONS: Array[StringName] = [
 @export_group("Landing & beavers")
 ## Touch a planet below this speed to land instead of crash.
 @export_range(0.5, 15.0, 0.5) var landing_speed_threshold := 8.0
+## Forgiving shell outside the physical collision radius, used only when the
+## current speed is safe to land. It turns visually convincing near-contacts
+## into a touchdown without making high-speed planet collisions larger.
+@export_range(0.0, 2.0, 0.05) var landing_assist_margin := 0.45
 @export_range(1.0, 15.0, 0.5) var takeoff_speed := 5.0
 ## Extra horizontal distance beyond the planet collision cross-section.
 ## A generous gap prevents strong gravity from pulling the ship straight
@@ -345,6 +349,7 @@ func _physics_process(delta: float) -> void:
 		_banner_time_left -= delta
 
 	if state == FlightState.FLYING:
+		var movement_start := get_spacecraft_world_position()
 		var flight_input := _get_flight_input()
 		if flight_input.length_squared() > 1.0:
 			flight_input = flight_input.normalized()
@@ -359,7 +364,7 @@ func _physics_process(delta: float) -> void:
 			velocity = velocity.normalized() * flight_speed
 		_move_spacecraft(delta)
 
-		_check_obstacle_collisions()
+		_check_obstacle_collisions(movement_start)
 		if state == FlightState.FLYING:
 			var at_destination := get_spacecraft_world_position().distance_to(_logical_to_world(destination)) <= arrival_radius
 			if at_destination:
@@ -691,8 +696,9 @@ func _get_collision_message_at(world_position: Vector3) -> String:
 	return ""
 
 
-func _check_obstacle_collisions() -> void:
+func _check_obstacle_collisions(previous_world_position: Vector3) -> void:
 	var spacecraft_world_position := get_spacecraft_world_position()
+	var impact_speed := velocity.length()
 
 	# Planets: approach speed decides landing vs crash.
 	if _obstacles_root != null:
@@ -707,9 +713,22 @@ func _check_obstacle_collisions() -> void:
 			if diameter == null:
 				continue
 			var collision_distance := float(diameter) * 0.5 + spacecraft_radius
-			if spacecraft_world_position.distance_to(obstacle.global_position) <= collision_distance:
-				if velocity.length() < landing_speed_threshold:
-					_land_on(obstacle, collision_distance, velocity.length())
+			var can_land := impact_speed <= landing_speed_threshold
+			var detection_distance := collision_distance + (landing_assist_margin if can_land else 0.0)
+			# Continuous segment-vs-sphere contact catches grazing approaches where
+			# both frame endpoints lie outside the sphere. Endpoint-only checks made
+			# those touchdowns depend on frame rate and exact contact angle.
+			var hit_fraction := _segment_sphere_hit_fraction(
+				previous_world_position,
+				spacecraft_world_position,
+				obstacle.global_position,
+				detection_distance
+			)
+			if hit_fraction >= 0.0:
+				var contact := previous_world_position.lerp(spacecraft_world_position, hit_fraction)
+				global_position = Vector3(contact.x, start_position.z, contact.z)
+				if can_land:
+					_land_on(obstacle, collision_distance, impact_speed)
 				else:
 					_crash("COLLISION · %s" % obstacle.name, 0.35)
 				return
@@ -723,6 +742,31 @@ func _check_obstacle_collisions() -> void:
 			if bool(black_hole.call("captures", spacecraft_world_position, spacecraft_radius)):
 				_crash("CAPTURED · %s" % black_hole.name, 0.5)
 				return
+
+
+## First intersection of a movement segment with a sphere, expressed in
+## [0, 1]. Returns -1 when there is no hit. Starting inside counts as t=0.
+func _segment_sphere_hit_fraction(
+	from: Vector3,
+	to: Vector3,
+	center: Vector3,
+	radius: float
+) -> float:
+	var offset := from - center
+	var radius_squared := radius * radius
+	if offset.length_squared() <= radius_squared:
+		return 0.0
+	var motion := to - from
+	var a := motion.length_squared()
+	if a <= 0.0000001:
+		return -1.0
+	var b := 2.0 * offset.dot(motion)
+	var c := offset.length_squared() - radius_squared
+	var discriminant := b * b - 4.0 * a * c
+	if discriminant < 0.0:
+		return -1.0
+	var first_hit := (-b - sqrt(discriminant)) / (2.0 * a)
+	return first_hit if first_hit >= 0.0 and first_hit <= 1.0 else -1.0
 
 
 func _crash(message: String, haptic_duration: float) -> void:
