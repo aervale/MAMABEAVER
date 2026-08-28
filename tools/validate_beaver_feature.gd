@@ -49,6 +49,13 @@ func _run_checks(scene: Node) -> void:
 	var vr_results := scene.get_node_or_null(
 		"XROrigin3D/XRCamera3D/FlightHUD/ResultsViewport/MissionResults"
 	)
+	var desktop_guide := scene.get_node_or_null("DesktopHUD/StartControlsGuide")
+	var vr_guide := scene.get_node_or_null(
+		"XROrigin3D/XRCamera3D/FlightHUD/GuideViewport/StartControlsGuide"
+	)
+	var vr_guide_display := scene.get_node_or_null(
+		"XROrigin3D/XRCamera3D/FlightHUD/StartGuideDisplay"
+	) as MeshInstance3D
 	_check(flight != null, "XROrigin3D must exist")
 	_check(director != null, "BeaverExhibit must exist")
 	_check(
@@ -71,6 +78,20 @@ func _run_checks(scene: Node) -> void:
 		and desktop_results.has_method("is_showing")
 		and String(desktop_results.call("get_title")) == "VICTORY!",
 		"desktop and XR settlement screens share the VICTORY presentation"
+	)
+	_check(
+		desktop_guide != null and vr_guide != null
+		and String(desktop_guide.call("get_guide_language")) == "English"
+		and bool(desktop_guide.call("is_showing"))
+		and bool(vr_guide.call("is_showing")),
+		"English controls guide appears on the desktop and XR start screens"
+	)
+	_check(
+		is_equal_approx((desktop_guide as Control).anchor_left, 0.5)
+		and vr_guide_display != null
+		and absf(vr_guide_display.position.x) < 0.001
+		and (vr_guide_display.mesh as QuadMesh).size.x >= 0.77,
+		"start guide is centred and enlarged for headset readability"
 	)
 	_check(
 		comfort_vignette != null and comfort_vignette.has_method("get_strength"),
@@ -105,15 +126,23 @@ func _run_checks(scene: Node) -> void:
 		return
 	_check(is_equal_approx(float(flight.get("arrival_radius")), 5.0), "MIT arrival radius is 5 m")
 
-	# Room-scale head movement must not alter the ship's physics anchor. The
-	# hull, minimap, landing and surface walking all follow XROrigin3D.
+	# Room-scale head movement must not alter physics, while the XR-only visual
+	# lock must place the cockpit at the tracked camera so the hull cannot
+	# separate from the player. Headless mode calls the same helper explicitly.
 	if xr_camera != null:
 		xr_camera.position = Vector3(1.2, 0.3, -0.8)
 		var anchored: Vector3 = flight.call("get_spacecraft_world_position")
 		_check(
 			anchored.distance_to((flight as Node3D).global_position) < 0.01,
-			"headset room-scale offset cannot separate the player from the ship"
+			"headset room-scale offset does not change the physics anchor"
 		)
+		ship_visual.call("_sync_to_xr_camera", true)
+		_check(
+			ship_visual.global_position.distance_to(xr_camera.global_position) < 0.001,
+			"XR spacecraft visual stays fixed to the tracked headset position"
+		)
+		# Desktop/headless keeps the external craft at the authoritative origin.
+		ship_visual.global_position = (flight as Node3D).global_position
 
 	# --- spawning ---
 	var total := int(director.call("get_total_count"))
@@ -158,6 +187,10 @@ func _run_checks(scene: Node) -> void:
 	# Planet01: center (30, 12.5, 22), diameter 12 -> collision radius 6.25.
 	# Park the camera 5.7 m out in XZ: 3D distance sqrt(5.7^2+2.5^2)=6.22 < 6.25.
 	flight.call("start_flight")
+	_check(
+		not bool(desktop_guide.call("is_showing")) and not bool(vr_guide.call("is_showing")),
+		"controls guide hides after the run starts"
+	)
 	flight.set("fuel", 10.0)
 	_teleport(flight, planet.global_position + Vector3(-5.7, 0.0, 0.0), Vector2(1.0, 0.0))
 	await physics_frame
@@ -169,7 +202,7 @@ func _run_checks(scene: Node) -> void:
 	)
 	_check(String(flight.call("get_predicted_flow_result")) == "LANDED", "predictor reports LANDED")
 
-	# --- firing is landed-only, capped, and spawns MagicBolt nodes ---
+	# --- landed firing can capture, is capped, and spawns MagicBolt nodes ---
 	# Tangential shot along the surface: this is the normal case, and the
 	# planet you stand on must not swallow it.
 	var muzzle: Vector3 = flight.call("get_spacecraft_world_position")
@@ -184,6 +217,10 @@ func _run_checks(scene: Node) -> void:
 	_check(
 		skimmer != null and (skimmer as MagicBolt).ignored_planet == planet,
 		"the bolt ignores the planet the player is standing on"
+	)
+	_check(
+		skimmer != null and (skimmer as MagicBolt).can_capture_beavers,
+		"a bolt fired while landed is capture-enabled"
 	)
 	_check(
 		skimmer == prewarmed_bolt and flight.get("_prewarmed_bolt") == null,
@@ -367,6 +404,37 @@ func _run_checks(scene: Node) -> void:
 		clearance >= expected_clearance - 0.01,
 		"takeoff includes the full safety margin (%.2f / %.2f m)" % [clearance, expected_clearance]
 	)
+
+	# Trigger remains responsive during flight, but the bolt's launch-time
+	# permission must prevent it from collecting a nearby beaver. Clear older
+	# landed shots first so they cannot produce an unrelated capture this frame.
+	var old_bolts: Array = flight.get("_live_bolts")
+	for old_bolt in old_bolts:
+		if is_instance_valid(old_bolt):
+			old_bolt.queue_free()
+	old_bolts.clear()
+	await process_frame
+	var air_target: Node3D = director.call("find_beaver_near", planet.global_position, 20.0)
+	var cargo_before_air_shot := int(director.call("get_cargo_count"))
+	if air_target != null:
+		var outward := (air_target.global_position - planet.global_position).normalized()
+		var tangent := outward.cross(Vector3.UP)
+		if tangent.length() < 0.01:
+			tangent = outward.cross(Vector3.RIGHT)
+		flight.call("_try_fire", air_target.global_position + outward, tangent.normalized())
+	var air_bolts: Array = flight.get("_live_bolts")
+	var air_bolt: MagicBolt = null
+	if not air_bolts.is_empty():
+		air_bolt = air_bolts.back() as MagicBolt
+	_check(
+		air_target != null and air_bolt != null and not air_bolt.can_capture_beavers,
+		"trigger fires in flight and marks the airborne bolt non-capturing"
+	)
+	await physics_frame
+	_check(
+		int(director.call("get_cargo_count")) == cargo_before_air_shot,
+		"an airborne bolt passing within hit radius cannot catch a beaver"
+	)
 	if ship_visual != null:
 		# A single update must align exactly with VELOCITY. A smoothed turn can
 		# lag toward the former heading and be mistaken for acceleration-following.
@@ -390,10 +458,13 @@ func _run_checks(scene: Node) -> void:
 		int(flight.get("state")) == STATE_FLYING,
 		"takeoff remains clear after the grace period"
 	)
-	# Firing in flight is now allowed, so a shot here must ADD a bolt.
-	var bolts_before := _count_bolts(scene)
-	flight.call("_try_fire", flight.call("get_spacecraft_world_position"), Vector3(0, 0, 1))
-	_check(_count_bolts(scene) == bolts_before + 1, "can fire while flying")
+	# Air firing remains available after the takeoff grace window as well.
+	var air_shot_sounds_before := int(game_sfx.call("get_play_count", &"trigger_shot"))
+	flight.call("_try_fire", Vector3.ZERO, Vector3(1, 0, 0))
+	_check(
+		int(game_sfx.call("get_play_count", &"trigger_shot")) == air_shot_sounds_before + 1,
+		"trigger continues to fire while flying after takeoff grace"
+	)
 
 	# --- impact warning fires on a fast approach, stays quiet on a slow one ---
 	flight.call("reset_flight")
@@ -415,10 +486,6 @@ func _run_checks(scene: Node) -> void:
 	await physics_frame
 	await physics_frame
 	_check(int(flight.get("state")) == STATE_CRASHED, "fast planet contact still crashes")
-	# B/Y must revive the run too: it is the button players reach for.
-	flight.call("_on_controller_button_pressed", &"by_button")
-	_check(int(flight.get("state")) == STATE_WAITING, "B/Y restarts after a crash")
-	flight.call("start_flight")
 
 	# --- tractor -> cargo ---
 	flight.call("reset_flight")

@@ -27,6 +27,7 @@
 [ext_resource type="Shader" path="res://comfort_vignette.gdshader" id="27_comfort_shader"]
 [ext_resource type="Script" path="res://game_sfx.gd" id="28_game_sfx"]
 [ext_resource type="Script" path="res://mission_results.gd" id="29_results"]
+[ext_resource type="Script" path="res://start_controls_guide.gd" id="30_start_guide"]
 
 [sub_resource type="StandardMaterial3D" id="Material_ship_marker"]
 albedo_color = Color(0.08, 0.75, 1, 1)
@@ -158,6 +159,7 @@ mesh = SubResource("SphereMesh_ship_marker")
 [node name="Spacecraft" type="Node3D" parent="XROrigin3D" unique_id=903318470]
 script = ExtResource("24_ship")
 flight_path = NodePath("..")
+flight_camera_path = NodePath("../XRCamera3D")
 
 [node name="AmbientDust" type="Node3D" parent="XROrigin3D" unique_id=903318450]
 script = ExtResource("21_dust")
@@ -468,3 +470,19 @@ grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
 script = ExtResource("29_results")
+
+[node name="StartControlsGuide" type="Control" parent="DesktopHUD"]
+layout_mode = 3
+anchors_preset = 0
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -270.0
+offset_top = -300.0
+offset_right = 270.0
+offset_bottom = 300.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+script = ExtResource("30_start_guide")
