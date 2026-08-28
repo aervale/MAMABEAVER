@@ -31,6 +31,7 @@ var is_xr_mode := false
 
 
 func _ready() -> void:
+	_setup_background_music()
 	xr_interface = XRServer.find_interface("OpenXR") as OpenXRInterface
 	# OpenXR is requested in project.godot, so Godot initializes it before the
 	# main scene. Retrying initialize() here can block desktop startup when no
@@ -39,6 +40,22 @@ func _ready() -> void:
 		_start_xr_mode()
 	else:
 		_start_desktop_mode()
+
+
+## Play the user-provided background track continuously in both desktop and
+## headset modes. AudioStreamWAV's native loop points avoid a frame-sized gap
+## that would occur if we restarted it from the `finished` signal.
+func _setup_background_music() -> void:
+	var music := get_node_or_null("BackgroundMusic") as AudioStreamPlayer
+	if music == null or music.stream == null:
+		push_warning("Main|WARN: background music is unavailable")
+		return
+	var wav := music.stream as AudioStreamWAV
+	if wav != null:
+		wav.loop_mode = AudioStreamWAV.LOOP_FORWARD
+		wav.loop_begin = 0
+		wav.loop_end = int(round(wav.get_length() * wav.mix_rate))
+	music.play()
 
 
 func _start_xr_mode() -> void:
