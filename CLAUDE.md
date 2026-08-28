@@ -79,6 +79,7 @@ altitude (`√(R² − dz²)`).
 | `magic_bolt.gd` | Gravity-nudged collection projectile (landed-only). |
 | `game_sfx.gd` | Original procedural firing, collection, deposit, and victory cues. |
 | `mission_results.gd` | Shared desktop/XR `VICTORY!` settlement screen and score presentation. |
+| `start_controls_guide.gd` | English quick-start controls card shown left of the WAITING screen. |
 | `surface_dust.gd` | Self-freeing one-shot dust puff (landing + footsteps). |
 | `black_hole_lens.gdshader` | Screen-space gravitational lensing shell (layer 1). |
 | `black_hole_cloud.gdshader` | Translucent swirling gas cloud (layer 2). |

@@ -49,6 +49,10 @@ func _run_checks(scene: Node) -> void:
 	var vr_results := scene.get_node_or_null(
 		"XROrigin3D/XRCamera3D/FlightHUD/ResultsViewport/MissionResults"
 	)
+	var desktop_guide := scene.get_node_or_null("DesktopHUD/StartControlsGuide")
+	var vr_guide := scene.get_node_or_null(
+		"XROrigin3D/XRCamera3D/FlightHUD/GuideViewport/StartControlsGuide"
+	)
 	_check(flight != null, "XROrigin3D must exist")
 	_check(director != null, "BeaverExhibit must exist")
 	_check(
@@ -71,6 +75,13 @@ func _run_checks(scene: Node) -> void:
 		and desktop_results.has_method("is_showing")
 		and String(desktop_results.call("get_title")) == "VICTORY!",
 		"desktop and XR settlement screens share the VICTORY presentation"
+	)
+	_check(
+		desktop_guide != null and vr_guide != null
+		and String(desktop_guide.call("get_guide_language")) == "English"
+		and bool(desktop_guide.call("is_showing"))
+		and bool(vr_guide.call("is_showing")),
+		"English controls guide appears on the desktop and XR start screens"
 	)
 	_check(
 		comfort_vignette != null and comfort_vignette.has_method("get_strength"),
@@ -158,6 +169,10 @@ func _run_checks(scene: Node) -> void:
 	# Planet01: center (30, 12.5, 22), diameter 12 -> collision radius 6.25.
 	# Park the camera 5.7 m out in XZ: 3D distance sqrt(5.7^2+2.5^2)=6.22 < 6.25.
 	flight.call("start_flight")
+	_check(
+		not bool(desktop_guide.call("is_showing")) and not bool(vr_guide.call("is_showing")),
+		"controls guide hides after the run starts"
+	)
 	flight.set("fuel", 10.0)
 	_teleport(flight, planet.global_position + Vector3(-5.7, 0.0, 0.0), Vector2(1.0, 0.0))
 	await physics_frame

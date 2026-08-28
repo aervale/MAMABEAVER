@@ -15,6 +15,7 @@ class_name VRHUDPresenter
 
 const FlightHUDScript = preload("res://flight_hud_graphic.gd")
 const MissionResultsScript = preload("res://mission_results.gd")
+const StartGuideScript = preload("res://start_controls_guide.gd")
 
 @export var texture_size := Vector2i(1024, 160)
 ## Metres wide in front of the player; height follows the texture's ratio.
@@ -24,6 +25,10 @@ var _hud_display: MeshInstance3D
 var _results_display: MeshInstance3D
 var _results_viewport: SubViewport
 var _results_control: MissionResults
+var _guide_display: MeshInstance3D
+var _guide_viewport: SubViewport
+var _guide_control: StartControlsGuide
+var _guide_was_showing := false
 
 
 func _ready() -> void:
@@ -58,17 +63,23 @@ func _ready() -> void:
 	_hud_display.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(_hud_display)
 	_build_results_display()
+	_build_start_guide()
 
 
 func _process(_delta: float) -> void:
-	if _results_control == null:
+	if _results_control == null or _guide_control == null:
 		return
-	var showing := _results_control.is_showing()
-	_hud_display.visible = not showing
-	_results_display.visible = showing
+	var results_showing := _results_control.is_showing()
+	_hud_display.visible = not results_showing
+	_results_display.visible = results_showing
 	_results_viewport.render_target_update_mode = (
-		SubViewport.UPDATE_ALWAYS if showing else SubViewport.UPDATE_DISABLED
+		SubViewport.UPDATE_ALWAYS if results_showing else SubViewport.UPDATE_DISABLED
 	)
+	var guide_showing := _guide_control.is_showing() and not results_showing
+	_guide_display.visible = guide_showing
+	if guide_showing and not _guide_was_showing:
+		_guide_viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
+	_guide_was_showing = guide_showing
 
 
 ## A larger central quad appears only on victory. Keeping its SubViewport
@@ -107,3 +118,42 @@ func _build_results_display() -> void:
 	_results_display.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	_results_display.visible = false
 	add_child(_results_display)
+
+
+## English instructions sit left of the centre view only on the start screen.
+## The texture is static and updates once per appearance, keeping its normal
+## in-game Quest rendering cost at zero.
+func _build_start_guide() -> void:
+	var guide_size := Vector2i(600, 760)
+	_guide_viewport = SubViewport.new()
+	_guide_viewport.name = "GuideViewport"
+	_guide_viewport.size = guide_size
+	_guide_viewport.transparent_bg = true
+	_guide_viewport.gui_disable_input = true
+	_guide_viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
+	add_child(_guide_viewport)
+
+	_guide_control = StartGuideScript.new() as StartControlsGuide
+	_guide_control.name = "StartControlsGuide"
+	_guide_control.position = Vector2.ZERO
+	_guide_control.size = Vector2(guide_size)
+	_guide_viewport.add_child(_guide_control)
+
+	var quad_mesh := QuadMesh.new()
+	quad_mesh.size = Vector2(0.53, 0.53 * float(guide_size.y) / float(guide_size.x))
+	var material := StandardMaterial3D.new()
+	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	material.cull_mode = BaseMaterial3D.CULL_DISABLED
+	material.no_depth_test = true
+	material.albedo_texture = _guide_viewport.get_texture()
+	material.render_priority = 80
+	quad_mesh.material = material
+
+	_guide_display = MeshInstance3D.new()
+	_guide_display.name = "StartGuideDisplay"
+	_guide_display.position = Vector3(-0.62, 0.34, -0.04)
+	_guide_display.mesh = quad_mesh
+	_guide_display.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(_guide_display)
+	_guide_was_showing = true
