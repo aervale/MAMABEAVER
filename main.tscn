@@ -6,7 +6,6 @@
 [ext_resource type="PackedScene" uid="uid://1qvjtj5tmo70" path="res://models/quest_touch_plus_left.glb" id="4_mdll"]
 [ext_resource type="PackedScene" uid="uid://cn5kxyuuli1wv" path="res://models/quest_touch_plus_right.glb" id="5_mdlr"]
 [ext_resource type="Script" uid="uid://bkeashwobe3gi" path="res://xr_passthrough.gd" id="6_pass"]
-[ext_resource type="Shader" uid="uid://bdncegx70k5ge" path="res://floor_grid.gdshader" id="7_grid"]
 [ext_resource type="Script" uid="uid://im3dcos560qi" path="res://moon_presenter.gd" id="8_moon"]
 [ext_resource type="PackedScene" uid="uid://yjgpcm06iylu" path="res://source/moon.fbx" id="9_moon_model"]
 [ext_resource type="Texture2D" uid="uid://dp0t5k5h3c4od" path="res://source/moon_color.png" id="10_moon_color"]
@@ -19,6 +18,7 @@
 [ext_resource type="Script" uid="uid://dxmf1304271gh" path="res://mit_destination.gd" id="17_mit_destination"]
 [ext_resource type="PackedScene" uid="uid://cta0etdpjyry7" path="res://source/black_hole/source/black hole.fbx" id="18_black_hole_model"]
 [ext_resource type="Script" uid="uid://o6gsvrtrx353" path="res://black_hole.gd" id="19_black_hole"]
+[ext_resource type="Shader" path="res://starfield_sky.gdshader" id="20_starsky"]
 
 [sub_resource type="StandardMaterial3D" id="Material_ship_marker"]
 albedo_color = Color(0.08, 0.75, 1, 1)
@@ -31,36 +31,19 @@ material = SubResource("Material_ship_marker")
 radius = 1.0
 height = 2.0
 
-[sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_cjouy"]
-sky_top_color = Color(0.002, 0.003, 0.009, 1)
-sky_horizon_color = Color(0.012, 0.016, 0.035, 1)
-ground_bottom_color = Color(0.001, 0.001, 0.003, 1)
-ground_horizon_color = Color(0.008, 0.01, 0.022, 1)
-sun_angle_max = 12.0
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_starsky"]
+shader = ExtResource("20_starsky")
 
 [sub_resource type="Sky" id="Sky_oqsj0"]
-sky_material = SubResource("ProceduralSkyMaterial_cjouy")
+sky_material = SubResource("ShaderMaterial_starsky")
 
 [sub_resource type="Environment" id="Environment_lts4m"]
 background_mode = 2
 sky = SubResource("Sky_oqsj0")
-ambient_light_source = 3
-ambient_light_color = Color(0.18, 0.22, 0.34, 1)
-ambient_light_energy = 0.35
+ambient_light_source = 2
+ambient_light_color = Color(0.2, 0.24, 0.38, 1)
+ambient_light_energy = 0.5
 reflected_light_source = 2
-
-[sub_resource type="ShaderMaterial" id="ShaderMaterial_floor"]
-render_priority = 0
-shader = ExtResource("7_grid")
-shader_parameter/floor_color = Color(0.1, 0.11, 0.13, 1)
-shader_parameter/line_color = Color(0.3, 0.48, 0.68, 1)
-shader_parameter/cell_size = 5.0
-
-[sub_resource type="PlaneMesh" id="PlaneMesh_floor"]
-size = Vector2(140, 140)
-
-[sub_resource type="BoxShape3D" id="BoxShape3D_floor"]
-size = Vector3(140, 0.2, 140)
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_hud"]
 content_margin_left = 18.0
@@ -100,7 +83,7 @@ pixel_size = 0.0018
 no_depth_test = true
 modulate = Color(0.7, 0.9, 1, 0.9)
 text = "POS  0.0, 0.0   ALT  10
-GOAL 100, 100"
+GOAL 200, 200"
 font_size = 28
 outline_size = 6
 
@@ -134,7 +117,7 @@ mesh = SubResource("SphereMesh_ship_marker")
 [node name="MoonExhibit" type="Node3D" parent="." unique_id=130901514]
 
 [node name="Planet01" type="Node3D" parent="MoonExhibit" unique_id=538946999]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 15, 8.4, 20)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 30, 12.5, 22)
 script = ExtResource("8_moon")
 model_scene = ExtResource("9_moon_model")
 albedo_texture = ExtResource("10_moon_color")
@@ -144,7 +127,7 @@ target_diameter_meters = 12.0
 rotation_speed_degrees = 0.0
 
 [node name="Planet02" type="Node3D" parent="MoonExhibit" unique_id=1569338524]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 34, 11.2, 14)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 68, 6.5, 30)
 script = ExtResource("8_moon")
 model_scene = ExtResource("9_moon_model")
 albedo_texture = ExtResource("10_moon_color")
@@ -154,7 +137,7 @@ target_diameter_meters = 16.0
 rotation_speed_degrees = 0.0
 
 [node name="Planet04" type="Node3D" parent="MoonExhibit" unique_id=1279901621]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 73, 10.8, 16)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 110, 13, 25)
 script = ExtResource("8_moon")
 model_scene = ExtResource("9_moon_model")
 albedo_texture = ExtResource("10_moon_color")
@@ -164,7 +147,7 @@ target_diameter_meters = 14.0
 rotation_speed_degrees = 0.0
 
 [node name="Planet05" type="Node3D" parent="MoonExhibit" unique_id=788035887]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 91, 8.9, 31)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 160, 6, 40)
 script = ExtResource("8_moon")
 model_scene = ExtResource("9_moon_model")
 albedo_texture = ExtResource("10_moon_color")
@@ -174,7 +157,7 @@ target_diameter_meters = 18.0
 rotation_speed_degrees = 0.0
 
 [node name="Planet07" type="Node3D" parent="MoonExhibit" unique_id=99348610]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 40, 9.7, 43)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 45, 13, 75)
 script = ExtResource("8_moon")
 model_scene = ExtResource("9_moon_model")
 albedo_texture = ExtResource("10_moon_color")
@@ -184,7 +167,7 @@ target_diameter_meters = 13.0
 rotation_speed_degrees = 0.0
 
 [node name="Planet08" type="Node3D" parent="MoonExhibit" unique_id=1804531839]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 62, 10.3, 49)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 95, 5.5, 85)
 script = ExtResource("8_moon")
 model_scene = ExtResource("9_moon_model")
 albedo_texture = ExtResource("10_moon_color")
@@ -194,7 +177,7 @@ target_diameter_meters = 18.0
 rotation_speed_degrees = 0.0
 
 [node name="Planet10" type="Node3D" parent="MoonExhibit" unique_id=823748133]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 28, 11, 70)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 150, 13.5, 95)
 script = ExtResource("8_moon")
 model_scene = ExtResource("9_moon_model")
 albedo_texture = ExtResource("10_moon_color")
@@ -204,7 +187,7 @@ target_diameter_meters = 14.0
 rotation_speed_degrees = 0.0
 
 [node name="Planet11" type="Node3D" parent="MoonExhibit" unique_id=1453920901]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 50, 9.1, 78)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 55, 6, 130)
 script = ExtResource("8_moon")
 model_scene = ExtResource("9_moon_model")
 albedo_texture = ExtResource("10_moon_color")
@@ -214,7 +197,7 @@ target_diameter_meters = 17.0
 rotation_speed_degrees = 0.0
 
 [node name="Planet13" type="Node3D" parent="MoonExhibit" unique_id=317799963]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -6, 8.7, 59)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 115, 13.5, 150)
 script = ExtResource("8_moon")
 model_scene = ExtResource("9_moon_model")
 albedo_texture = ExtResource("10_moon_color")
@@ -224,7 +207,7 @@ target_diameter_meters = 15.0
 rotation_speed_degrees = 0.0
 
 [node name="Planet14" type="Node3D" parent="MoonExhibit" unique_id=1348694356]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 108, 11.8, 66)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 170, 7, 135)
 script = ExtResource("8_moon")
 model_scene = ExtResource("9_moon_model")
 albedo_texture = ExtResource("10_moon_color")
@@ -233,10 +216,52 @@ roughness_texture = ExtResource("12_moon_rough")
 target_diameter_meters = 13.0
 rotation_speed_degrees = 0.0
 
+[node name="SceneryExhibit" type="Node3D" parent="." unique_id=903318441]
+
+[node name="SceneryMoon01" type="Node3D" parent="SceneryExhibit" unique_id=903318442]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 260, -70, 40)
+script = ExtResource("8_moon")
+model_scene = ExtResource("9_moon_model")
+albedo_texture = ExtResource("10_moon_color")
+normal_texture = ExtResource("11_moon_normal")
+roughness_texture = ExtResource("12_moon_rough")
+target_diameter_meters = 90.0
+rotation_speed_degrees = 0.3
+
+[node name="SceneryMoon02" type="Node3D" parent="SceneryExhibit" unique_id=903318443]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -90, 60, 190)
+script = ExtResource("8_moon")
+model_scene = ExtResource("9_moon_model")
+albedo_texture = ExtResource("10_moon_color")
+normal_texture = ExtResource("11_moon_normal")
+roughness_texture = ExtResource("12_moon_rough")
+target_diameter_meters = 70.0
+rotation_speed_degrees = 0.2
+
+[node name="SceneryMoon03" type="Node3D" parent="SceneryExhibit" unique_id=903318444]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 120, 100, 330)
+script = ExtResource("8_moon")
+model_scene = ExtResource("9_moon_model")
+albedo_texture = ExtResource("10_moon_color")
+normal_texture = ExtResource("11_moon_normal")
+roughness_texture = ExtResource("12_moon_rough")
+target_diameter_meters = 100.0
+rotation_speed_degrees = 0.15
+
+[node name="SceneryMoon04" type="Node3D" parent="SceneryExhibit" unique_id=903318445]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 60, -90, 260)
+script = ExtResource("8_moon")
+model_scene = ExtResource("9_moon_model")
+albedo_texture = ExtResource("10_moon_color")
+normal_texture = ExtResource("11_moon_normal")
+roughness_texture = ExtResource("12_moon_rough")
+target_diameter_meters = 80.0
+rotation_speed_degrees = 0.25
+
 [node name="BlackHoleExhibit" type="Node3D" parent="." unique_id=637288623]
 
 [node name="BlackHole03" type="Node3D" parent="BlackHoleExhibit" unique_id=387114975]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 53, 9.3, 23)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 85, 10.5, 55)
 script = ExtResource("19_black_hole")
 model_scene = ExtResource("18_black_hole_model")
 visual_diameter_meters = 11.0
@@ -248,7 +273,7 @@ disk_tilt_degrees = 18.0
 disk_roll_degrees = -28.0
 
 [node name="BlackHole06" type="Node3D" parent="BlackHoleExhibit" unique_id=335265443]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 19, 11.6, 47)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 25, 9.5, 105)
 script = ExtResource("19_black_hole")
 model_scene = ExtResource("18_black_hole_model")
 visual_diameter_meters = 16.0
@@ -260,7 +285,7 @@ disk_tilt_degrees = 18.0
 disk_roll_degrees = -28.0
 
 [node name="BlackHole09" type="Node3D" parent="BlackHoleExhibit" unique_id=1567358078]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 83, 8.2, 56)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 135, 11, 70)
 script = ExtResource("19_black_hole")
 model_scene = ExtResource("18_black_hole_model")
 visual_diameter_meters = 10.0
@@ -272,7 +297,7 @@ disk_tilt_degrees = 18.0
 disk_roll_degrees = -28.0
 
 [node name="BlackHole12" type="Node3D" parent="BlackHoleExhibit" unique_id=1746772897]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 75, 10.6, 81)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 90, 9, 120)
 script = ExtResource("19_black_hole")
 model_scene = ExtResource("18_black_hole_model")
 visual_diameter_meters = 12.0
@@ -284,7 +309,7 @@ disk_tilt_degrees = 18.0
 disk_roll_degrees = -28.0
 
 [node name="BlackHole15" type="Node3D" parent="BlackHoleExhibit" unique_id=44041510]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 60, 9.8, 108)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 165, 10, 175)
 script = ExtResource("19_black_hole")
 model_scene = ExtResource("18_black_hole_model")
 visual_diameter_meters = 16.0
@@ -296,57 +321,40 @@ disk_tilt_degrees = 18.0
 disk_roll_degrees = -28.0
 
 [node name="SceneViewTarget" type="Node3D" parent="." unique_id=1090699659]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 50, 9, 50)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 100, 9, 100)
 
 [node name="Destination" type="Node3D" parent="." unique_id=72902076]
-transform = Transform3D(0.70710677, 0, 0.70710677, 0, 1, 0, -0.70710677, 0, 0.70710677, 100, 0, 100)
+transform = Transform3D(0.70710677, 0, 0.70710677, 0, 1, 0, -0.70710677, 0, 0.70710677, 200, 0, 200)
 script = ExtResource("17_mit_destination")
 
 [node name="DesktopCamera" type="Camera3D" parent="." unique_id=147518279]
 current = true
 fov = 55.0
-far = 400.0
+far = 800.0
 script = ExtResource("13_desktop_camera")
 target_path = NodePath("../SceneViewTarget")
-distance = 145.0
+distance = 280.0
 initial_pitch_degrees = 45.0
 
 [node name="WorldEnvironment" type="WorldEnvironment" parent="." unique_id=868570715]
 environment = SubResource("Environment_lts4m")
 
-[node name="Floor" type="StaticBody3D" parent="." unique_id=1222995564]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 50, 0, 50)
-
-[node name="Mesh" type="MeshInstance3D" parent="Floor" unique_id=1788946882]
-material_override = SubResource("ShaderMaterial_floor")
-mesh = SubResource("PlaneMesh_floor")
-
-[node name="Collision" type="CollisionShape3D" parent="Floor" unique_id=429380688]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.1, 0)
-shape = SubResource("BoxShape3D_floor")
-
 [node name="Props" type="Node3D" parent="." unique_id=546788418]
 
 [node name="SunLight" type="DirectionalLight3D" parent="." unique_id=1844096403]
 transform = Transform3D(0.86601907, -0.3535631, 0.35355926, 0, 0.70710295, 0.70711064, -0.500011, -0.61237127, 0.6123646, 0, 2.9986405, 0)
-light_color = Color(0.82, 0.88, 1, 1)
-light_energy = 1.5
+light_color = Color(1, 0.93, 0.8, 1)
+light_energy = 2.0
 shadow_enabled = true
 shadow_bias = 0.03
 shadow_normal_bias = 1.0
 directional_shadow_mode = 0
-directional_shadow_max_distance = 200.0
-
-[node name="MoonRimLight" type="OmniLight3D" parent="." unique_id=506696339]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.8, 2.6, -2.2)
-light_color = Color(0.34, 0.52, 1, 1)
-light_energy = 2.4
-shadow_enabled = true
+directional_shadow_max_distance = 320.0
 
 [node name="Passthrough" type="Node" parent="." unique_id=1290157622]
 script = ExtResource("6_pass")
 world_environment = NodePath("../WorldEnvironment")
-hide_in_passthrough = Array[NodePath]([NodePath("../Floor")])
+hide_in_passthrough = Array[NodePath]([])
 
 [node name="DesktopHUD" type="CanvasLayer" parent="." unique_id=682021376]
 layer = 10
@@ -371,7 +379,7 @@ text = "STAR DODGE · 15-BODY TEST"
 [node name="Mode" type="Label" parent="DesktopHUD/Panel/Content" unique_id=198413467]
 layout_mode = 2
 theme_override_colors/font_color = Color(0.86, 0.9, 1, 1)
-text = "Ship: (0, 0, 10)  ·  Goal: (100, 100, 10)"
+text = "Ship: (0, 0, 10)  ·  Goal: (200, 200, 10)"
 
 [node name="Controls" type="Label" parent="DesktopHUD/Panel/Content" unique_id=156795761]
 layout_mode = 2
