@@ -99,7 +99,8 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.32, -1.5)
 pixel_size = 0.0018
 no_depth_test = true
 modulate = Color(0.7, 0.9, 1, 0.9)
-text = "POS  0.0, 0.0   ALT  10
+text = "POS 0.0, 0.0   ALT 10
+SPD 0.0   GRAV 0.0   FUEL 100/100
 GOAL 100, 100"
 font_size = 28
 outline_size = 6

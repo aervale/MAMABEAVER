@@ -43,14 +43,33 @@ const RESTART_BUTTONS: Array[StringName] = [
 @export_range(0.5, 20.0, 0.5) var arrival_radius := 3.0
 @export_range(0.0, 0.9, 0.05) var joystick_deadzone := 0.15
 
+@export_group("Fuel")
+@export_range(1.0, 1000.0, 1.0) var maximum_fuel := 100.0
+@export_range(0.0, 100.0, 0.5) var fuel_burn_per_second := 8.0
+
 @export_group("Planet gravity")
 ## Safety cap only affects pathological positions inside a planet.
 @export_range(1.0, 100.0, 1.0) var maximum_gravity_acceleration := 30.0
+
+@export_group("ODE flow prediction")
+## The predictor integrates d(position)/dt = velocity and
+## d(velocity)/dt = thrust + gravity(position) - drag * velocity.
+@export_range(1.0, 20.0, 0.5) var prediction_horizon_seconds := 8.0
+@export_range(0.02, 0.5, 0.01) var prediction_time_step := 0.1
+@export_range(0.05, 1.0, 0.05) var prediction_update_interval := 0.1
+@export var prediction_holds_current_thrust := true
 
 var state := FlightState.FLYING
 var velocity := Vector2.ZERO
 var gravity_acceleration := Vector2.ZERO
 var crash_message := "COLLISION"
+var fuel := 100.0
+
+## Logical XY points sampled from the RK4 approximation of the ODE flow.
+var predicted_flow_points := PackedVector2Array()
+var predicted_flow_result := "SAFE"
+var predicted_flow_message := ""
+var predicted_flow_duration := 0.0
 
 var _left_controller: XRController3D
 var _right_controller: XRController3D
@@ -60,6 +79,8 @@ var _black_holes_root: Node3D
 var _vr_status: Label3D
 var _desktop_status: Label
 var _restart_was_pressed := false
+var _last_flight_input := Vector2.ZERO
+var _prediction_elapsed := 0.0
 
 
 func _ready() -> void:
@@ -86,6 +107,8 @@ func _physics_process(delta: float) -> void:
 		var flight_input := _get_flight_input()
 		if flight_input.length_squared() > 1.0:
 			flight_input = flight_input.normalized()
+		flight_input = _consume_fuel_for_input(flight_input, delta)
+		_last_flight_input = flight_input
 
 		gravity_acceleration = _calculate_gravity_acceleration()
 		velocity += (flight_input * spacecraft_acceleration_a + gravity_acceleration) * delta
@@ -100,6 +123,13 @@ func _physics_process(delta: float) -> void:
 			velocity = Vector2.ZERO
 			_pulse_controllers(0.45, 0.5)
 			print("SpacecraftFlight|INFO: destination reached")
+	else:
+		_last_flight_input = Vector2.ZERO
+
+	_prediction_elapsed += delta
+	if _prediction_elapsed >= prediction_update_interval:
+		_prediction_elapsed = 0.0
+		_update_predicted_flow()
 
 	_update_status()
 
@@ -109,7 +139,11 @@ func reset_flight() -> void:
 	velocity = Vector2.ZERO
 	gravity_acceleration = Vector2.ZERO
 	crash_message = "COLLISION"
+	fuel = maximum_fuel
+	_last_flight_input = Vector2.ZERO
+	_prediction_elapsed = 0.0
 	global_position = _logical_to_world(start_position)
+	_update_predicted_flow()
 	_update_status()
 	print("SpacecraftFlight|INFO: flight reset to %s" % start_position)
 
@@ -128,8 +162,11 @@ func _move_spacecraft(delta: float) -> void:
 
 
 func _calculate_gravity_acceleration() -> Vector2:
+	return get_total_gravity_at(get_spacecraft_world_position())
+
+
+func get_total_gravity_at(world_position: Vector3) -> Vector2:
 	var total := Vector2.ZERO
-	var spacecraft_world_position := get_spacecraft_world_position()
 
 	if _obstacles_root != null and not is_zero_approx(gravity_constant_c):
 		for child in _obstacles_root.get_children():
@@ -141,7 +178,7 @@ func _calculate_gravity_acceleration() -> Vector2:
 				continue
 
 			var radius := float(diameter) * 0.5
-			var to_center := planet.global_position - spacecraft_world_position
+			var to_center := planet.global_position - world_position
 			var distance_to_center := maxf(to_center.length(), 0.01)
 			var acceleration_magnitude := gravity_constant_c * radius ** 3.0 / distance_to_center ** 2.0
 			var direction := to_center / distance_to_center
@@ -154,7 +191,7 @@ func _calculate_gravity_acceleration() -> Vector2:
 				continue
 			var black_hole_acceleration: Variant = black_hole.call(
 				"get_gravity_acceleration_at",
-				spacecraft_world_position
+				world_position
 			)
 			if black_hole_acceleration is Vector3:
 				total += Vector2(black_hole_acceleration.x, black_hole_acceleration.z)
@@ -162,6 +199,23 @@ func _calculate_gravity_acceleration() -> Vector2:
 	if total.length() > maximum_gravity_acceleration:
 		total = total.normalized() * maximum_gravity_acceleration
 	return total
+
+
+func _consume_fuel_for_input(flight_input: Vector2, delta: float) -> Vector2:
+	if flight_input.is_zero_approx() or is_zero_approx(fuel_burn_per_second):
+		return flight_input
+	if fuel <= 0.0:
+		fuel = 0.0
+		return Vector2.ZERO
+
+	var requested_fuel := fuel_burn_per_second * flight_input.length() * delta
+	if requested_fuel <= fuel:
+		fuel -= requested_fuel
+		return flight_input
+
+	var available_fraction := fuel / maxf(requested_fuel, 0.0001)
+	fuel = 0.0
+	return flight_input * available_fraction
 
 
 func _get_flight_input() -> Vector2:
@@ -206,9 +260,95 @@ func _head_relative_stick(stick: Vector2) -> Vector2:
 	return Vector2(world_direction.x, world_direction.z)
 
 
-func _check_obstacle_collisions() -> void:
-	var spacecraft_world_position := get_spacecraft_world_position()
+func _update_predicted_flow() -> void:
+	predicted_flow_points = PackedVector2Array()
+	predicted_flow_result = "SAFE"
+	predicted_flow_message = ""
+	predicted_flow_duration = 0.0
 
+	var world_position := get_spacecraft_world_position()
+	var ode_state := Vector4(
+		world_position.x,
+		world_position.z,
+		velocity.x,
+		velocity.y
+	)
+	predicted_flow_points.append(Vector2(ode_state.x, ode_state.y))
+
+	if state != FlightState.FLYING:
+		predicted_flow_result = "STOPPED"
+		predicted_flow_message = crash_message if state == FlightState.CRASHED else "DESTINATION"
+		return
+
+	var held_input := _last_flight_input if prediction_holds_current_thrust else Vector2.ZERO
+	var predicted_fuel := fuel
+	var step_count := maxi(1, int(ceil(prediction_horizon_seconds / prediction_time_step)))
+	var destination_world := _logical_to_world(destination)
+
+	for step_index in step_count:
+		var effective_input := held_input
+		if not effective_input.is_zero_approx() and not is_zero_approx(fuel_burn_per_second):
+			var requested_fuel := fuel_burn_per_second * effective_input.length() * prediction_time_step
+			if requested_fuel > predicted_fuel:
+				var available_fraction := predicted_fuel / maxf(requested_fuel, 0.0001)
+				effective_input *= available_fraction
+				predicted_fuel = 0.0
+			else:
+				predicted_fuel -= requested_fuel
+
+		ode_state = _rk4_flow_step(ode_state, effective_input, prediction_time_step)
+		ode_state = _constrain_predicted_state(ode_state)
+		var predicted_world := Vector3(ode_state.x, start_position.z, ode_state.y)
+		predicted_flow_points.append(Vector2(ode_state.x, ode_state.y))
+		predicted_flow_duration = float(step_index + 1) * prediction_time_step
+
+		var collision_message := _get_collision_message_at(predicted_world)
+		if not collision_message.is_empty():
+			predicted_flow_result = "IMPACT"
+			predicted_flow_message = collision_message
+			break
+		if predicted_world.distance_to(destination_world) <= arrival_radius:
+			predicted_flow_result = "GOAL"
+			predicted_flow_message = "DESTINATION"
+			break
+
+
+func _flow_derivative(ode_state: Vector4, held_input: Vector2) -> Vector4:
+	var position_2d := Vector2(ode_state.x, ode_state.y)
+	var velocity_2d := Vector2(ode_state.z, ode_state.w)
+	var world_position := Vector3(position_2d.x, start_position.z, position_2d.y)
+	var acceleration := (
+		held_input * spacecraft_acceleration_a
+		+ get_total_gravity_at(world_position)
+		- velocity_2d * linear_drag
+	)
+	return Vector4(velocity_2d.x, velocity_2d.y, acceleration.x, acceleration.y)
+
+
+func _rk4_flow_step(ode_state: Vector4, held_input: Vector2, step_size: float) -> Vector4:
+	var k1 := _flow_derivative(ode_state, held_input)
+	var k2 := _flow_derivative(ode_state + k1 * (step_size * 0.5), held_input)
+	var k3 := _flow_derivative(ode_state + k2 * (step_size * 0.5), held_input)
+	var k4 := _flow_derivative(ode_state + k3 * step_size, held_input)
+	return ode_state + (k1 + k2 * 2.0 + k3 * 2.0 + k4) * (step_size / 6.0)
+
+
+func _constrain_predicted_state(ode_state: Vector4) -> Vector4:
+	var position_2d := Vector2(ode_state.x, ode_state.y)
+	var velocity_2d := Vector2(ode_state.z, ode_state.w)
+	if velocity_2d.length() > flight_speed:
+		velocity_2d = velocity_2d.normalized() * flight_speed
+
+	if position_2d.x < play_area_min.x or position_2d.x > play_area_max.x:
+		position_2d.x = clampf(position_2d.x, play_area_min.x, play_area_max.x)
+		velocity_2d.x = 0.0
+	if position_2d.y < play_area_min.y or position_2d.y > play_area_max.y:
+		position_2d.y = clampf(position_2d.y, play_area_min.y, play_area_max.y)
+		velocity_2d.y = 0.0
+	return Vector4(position_2d.x, position_2d.y, velocity_2d.x, velocity_2d.y)
+
+
+func _get_collision_message_at(world_position: Vector3) -> String:
 	if _obstacles_root != null:
 		for child in _obstacles_root.get_children():
 			var obstacle := child as Node3D
@@ -217,32 +357,32 @@ func _check_obstacle_collisions() -> void:
 			var diameter: Variant = obstacle.get("target_diameter_meters")
 			if diameter == null:
 				continue
-			var obstacle_radius := float(diameter) * 0.5
-			var distance_to_center := spacecraft_world_position.distance_to(obstacle.global_position)
-			var collision_distance := spacecraft_radius + obstacle_radius
-			if distance_to_center <= collision_distance:
-				state = FlightState.CRASHED
-				crash_message = "COLLISION · %s" % obstacle.name
-				velocity = Vector2.ZERO
-				_pulse_controllers(1.0, 0.35)
-				print(
-					"SpacecraftFlight|INFO: collision with %s at distance %.2f (limit %.2f)"
-					% [obstacle.name, distance_to_center, collision_distance]
-				)
-				return
+			var collision_distance := float(diameter) * 0.5 + spacecraft_radius
+			if world_position.distance_to(obstacle.global_position) <= collision_distance:
+				return "COLLISION · %s" % obstacle.name
 
 	if _black_holes_root != null:
 		for child in _black_holes_root.get_children():
 			var black_hole := child as Node3D
 			if black_hole == null or not black_hole.has_method("captures"):
 				continue
-			if bool(black_hole.call("captures", spacecraft_world_position, spacecraft_radius)):
-				state = FlightState.CRASHED
-				crash_message = "CAPTURED · %s" % black_hole.name
-				velocity = Vector2.ZERO
-				_pulse_controllers(1.0, 0.5)
-				print("SpacecraftFlight|INFO: captured by %s" % black_hole.name)
-				return
+			if bool(black_hole.call("captures", world_position, spacecraft_radius)):
+				return "CAPTURED · %s" % black_hole.name
+	return ""
+
+
+func _check_obstacle_collisions() -> void:
+	var spacecraft_world_position := get_spacecraft_world_position()
+	var collision_message := _get_collision_message_at(spacecraft_world_position)
+	if collision_message.is_empty():
+		return
+
+	state = FlightState.CRASHED
+	crash_message = collision_message
+	velocity = Vector2.ZERO
+	var captured := collision_message.begins_with("CAPTURED")
+	_pulse_controllers(1.0, 0.5 if captured else 0.35)
+	print("SpacecraftFlight|INFO: %s" % collision_message)
 
 
 func _is_restart_pressed() -> bool:
@@ -281,12 +421,14 @@ func _update_status() -> void:
 		FlightState.ARRIVED:
 			message = "DESTINATION REACHED\nPress A/X or trigger to fly again"
 		_:
-			message = "POS %.1f, %.1f   ALT %.0f\nSPD %.1f   GRAV %.2f\nGOAL %.0f, %.0f   DIST %.1f" % [
+			message = "POS %.1f, %.1f   ALT %.0f\nSPD %.1f   GRAV %.2f   FUEL %.0f/%.0f\nGOAL %.0f, %.0f   DIST %.1f" % [
 				logical_position.x,
 				logical_position.y,
 				logical_position.z,
 				velocity.length(),
 				gravity_acceleration.length(),
+				fuel,
+				maximum_fuel,
 				destination.x,
 				destination.y,
 				distance_left,
@@ -295,6 +437,22 @@ func _update_status() -> void:
 		_vr_status.text = message
 	if _desktop_status != null:
 		_desktop_status.text = message.replace("\n", "  ·  ")
+
+
+func get_fuel_ratio() -> float:
+	return clampf(fuel / maxf(maximum_fuel, 0.0001), 0.0, 1.0)
+
+
+func get_predicted_flow_points() -> PackedVector2Array:
+	return predicted_flow_points
+
+
+func get_predicted_flow_result() -> String:
+	return predicted_flow_result
+
+
+func get_predicted_flow_message() -> String:
+	return predicted_flow_message
 
 
 func get_flight_coordinates() -> Vector3:
