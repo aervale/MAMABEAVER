@@ -34,8 +34,13 @@ func _ready() -> void:
 func _process(_delta: float) -> void:
 	if _flight == null or _hull_root == null:
 		return
-	# Step out of the ship to collect; climb back in to fly.
-	_hull_root.visible = int(_flight.get("state")) != STATE_LANDED
+	# Step out of the ship to collect; bring the hull back as soon as the
+	# continuous takeoff begins so the player sees a craft during the glide.
+	var taking_off := (
+		_flight.has_method("is_takeoff_animating")
+		and bool(_flight.call("is_takeoff_animating"))
+	)
+	_hull_root.visible = int(_flight.get("state")) != STATE_LANDED or taking_off
 
 	# Engines pulse with throttle so the craft feels alive under thrust.
 	var velocity: Variant = _flight.get("velocity")

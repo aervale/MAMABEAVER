@@ -40,6 +40,7 @@ func _run_checks(scene: Node) -> void:
 	var planet := scene.get_node_or_null("MoonExhibit/Planet01") as Node3D
 	var background_music := scene.get_node_or_null("BackgroundMusic") as AudioStreamPlayer
 	var xr_camera := scene.get_node_or_null("XROrigin3D/XRCamera3D") as XRCamera3D
+	var comfort_vignette := scene.get_node_or_null("XROrigin3D/XRCamera3D/ComfortVignette")
 	var ship_visual := scene.get_node_or_null("XROrigin3D/Spacecraft") as Node3D
 	var left_controller := scene.get_node_or_null("XROrigin3D/XRControllerLeft") as XRController3D
 	var right_controller := scene.get_node_or_null("XROrigin3D/XRControllerRight") as XRController3D
@@ -54,6 +55,15 @@ func _run_checks(scene: Node) -> void:
 		"background music loads, plays, and loops"
 	)
 	_check(ship_visual != null, "visible spacecraft must exist")
+	_check(
+		comfort_vignette != null and comfort_vignette.has_method("get_strength"),
+		"head-locked dynamic comfort vignette exists"
+	)
+	_check(
+		is_instance_valid(flight.get("_prewarmed_bolt"))
+		and not (flight.get("_prewarmed_bolt") as Node3D).visible,
+		"first magic bolt is prewarmed invisibly during loading"
+	)
 	_check(
 		left_controller != null and right_controller != null
 		and left_controller.pose == &"aim" and right_controller.pose == &"aim",
@@ -130,6 +140,7 @@ func _run_checks(scene: Node) -> void:
 	# Tangential shot along the surface: this is the normal case, and the
 	# planet you stand on must not swallow it.
 	var muzzle: Vector3 = flight.call("get_spacecraft_world_position")
+	var prewarmed_bolt: Node3D = flight.get("_prewarmed_bolt") as Node3D
 	flight.call("_try_fire", muzzle, Vector3(0, 0, 1))
 	_check(_count_bolts(scene) == 1, "a surface-skimming shot fires while landed")
 	var skimmer: Node3D = null
@@ -139,6 +150,10 @@ func _run_checks(scene: Node) -> void:
 	_check(
 		skimmer != null and (skimmer as MagicBolt).ignored_planet == planet,
 		"the bolt ignores the planet the player is standing on"
+	)
+	_check(
+		skimmer == prewarmed_bolt and flight.get("_prewarmed_bolt") == null,
+		"first trigger pull reuses the prewarmed bolt without construction"
 	)
 	# Straight down into the rock is the one aim that gets refused.
 	var into := (planet.global_position - muzzle).normalized()
@@ -239,8 +254,28 @@ func _run_checks(scene: Node) -> void:
 	if xr_camera != null:
 		xr_camera.rotation = Vector3(0.0, deg_to_rad(63.0), 0.0)
 		view_heading_before_takeoff = flight.call("get_view_heading")
+	var takeoff_start: Vector3 = flight.call("get_spacecraft_world_position")
 	flight.call("take_off")
-	_check(int(flight.get("state")) == STATE_FLYING, "B/Y takes off")
+	_check(
+		int(flight.get("state")) == STATE_LANDED
+		and bool(flight.call("is_takeoff_animating")),
+		"B/Y begins a protected continuous takeoff"
+	)
+	var takeoff_target: Vector3 = flight.get("_takeoff_to")
+	await physics_frame
+	var takeoff_first_step: Vector3 = flight.call("get_spacecraft_world_position")
+	_check(
+		takeoff_first_step.distance_to(takeoff_start) > 0.0001
+		and takeoff_first_step.distance_to(takeoff_target) > 0.01,
+		"takeoff moves through intermediate positions instead of teleporting"
+	)
+	var takeoff_frames_left := int(ceil(
+		float(flight.get("takeoff_animation_seconds")) * Engine.physics_ticks_per_second
+	)) + 10
+	while bool(flight.call("is_takeoff_animating")) and takeoff_frames_left > 0:
+		await physics_frame
+		takeoff_frames_left -= 1
+	_check(int(flight.get("state")) == STATE_FLYING, "continuous takeoff completes into FLYING")
 	_check(
 		(flight as Node3D).global_basis.y.dot(Vector3.UP) > 0.999,
 		"takeoff levels the rig back upright for flight"

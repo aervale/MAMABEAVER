@@ -140,6 +140,9 @@ const MAP_EXPAND_BUTTONS: Array[StringName] = [
 ## A generous gap prevents strong gravity from pulling the ship straight
 ## back into the surface as soon as the takeoff grace period ends.
 @export_range(0.5, 10.0, 0.25) var takeoff_clearance_margin := 3.0
+## Duration of the continuous glide from the surface to the safe flight point.
+## Position and rig leveling use the same easing curve, avoiding a teleport.
+@export_range(0.0, 4.0, 0.1) var takeoff_animation_seconds := 1.2
 ## After takeoff, the departed planet is ignored this long (no re-collide).
 @export_range(0.1, 3.0, 0.05) var takeoff_grace_seconds := 0.75
 @export_range(5.0, 60.0, 1.0) var bolt_speed := 36.0
@@ -224,6 +227,15 @@ var _restart_hold := 0.0
 var _last_footprint := Vector3(1e9, 1e9, 1e9)
 ## planet -> Array of footprint MeshInstance3D, oldest first.
 var _footprints := {}
+var _takeoff_from := Vector3.ZERO
+var _takeoff_to := Vector3.ZERO
+var _takeoff_from_basis := Basis.IDENTITY
+var _takeoff_to_basis := Basis.IDENTITY
+var _takeoff_away := Vector2.RIGHT
+var _takeoff_elapsed := -1.0
+## Constructed during loading so the first trigger pull does not allocate
+## meshes, particles, materials and their render resources in one frame.
+var _prewarmed_bolt: MagicBolt = null
 var _map_expanded := false
 var _last_flight_input := Vector2.ZERO
 var _prediction_elapsed := 0.0
@@ -242,6 +254,7 @@ func _ready() -> void:
 		if controller != null and not controller.button_pressed.is_connected(_on_controller_button_pressed):
 			controller.button_pressed.connect(_on_controller_button_pressed)
 	reset_flight()
+	_prewarm_first_bolt()
 
 
 func _physics_process(delta: float) -> void:
@@ -312,7 +325,9 @@ func _physics_process(delta: float) -> void:
 				_inside_arrival_zone = false
 	elif state == FlightState.LANDED:
 		_last_flight_input = Vector2.ZERO
-		if _landing_elapsed >= 0.0:
+		if _takeoff_elapsed >= 0.0:
+			_advance_takeoff(delta)
+		elif _landing_elapsed >= 0.0:
 			_advance_landing(delta)
 		else:
 			_walk_on_surface(delta, _get_walk_input())
@@ -343,6 +358,7 @@ func reset_flight() -> void:
 	# Footprints deliberately survive a reset — they are a record of which
 	# planets you have already combed, which is exactly what you want after
 	# dying and starting the run again.
+	_takeoff_elapsed = -1.0
 	_level_rig()
 	_inside_arrival_zone = false
 	_banner_time_left = 0.0
@@ -675,6 +691,7 @@ func _land_on(planet: Node3D, collision_distance: float, impact_speed: float) ->
 	state = FlightState.LANDED
 	_landed_planet = planet
 	_surface_walk_forward = Vector3.ZERO
+	_takeoff_elapsed = -1.0
 	velocity = Vector2.ZERO
 	fuel = maximum_fuel
 
@@ -890,7 +907,7 @@ func _align_rig_up(target_up: Vector3, weight: float) -> void:
 ## world-space horizontal look direction captured before leveling. We also
 ## account for the headset's local yaw inside the rig; otherwise that yaw gets
 ## applied twice and the player can wake up facing back toward the start.
-func _level_rig(view_heading := Vector2.ZERO) -> void:
+func _get_level_basis(view_heading := Vector2.ZERO) -> Basis:
 	var target_basis: Basis
 	if view_heading.length_squared() > 0.0001 and _flight_camera != null:
 		var desired_forward := Vector3(view_heading.x, 0.0, view_heading.y).normalized()
@@ -910,8 +927,12 @@ func _level_rig(view_heading := Vector2.ZERO) -> void:
 		if forward.length() < 0.01:
 			forward = Vector3.FORWARD
 		target_basis = Basis.looking_at(forward.normalized(), Vector3.UP)
+	return target_basis.orthonormalized()
+
+
+func _level_rig(view_heading := Vector2.ZERO) -> void:
 	var pivot := global_position
-	global_basis = target_basis.orthonormalized()
+	global_basis = _get_level_basis(view_heading)
 	global_position = pivot
 
 
@@ -941,13 +962,18 @@ func _spawn_dust(
 ## planet's cross-section there — otherwise "up" would launch you straight
 ## into the rock.
 func take_off() -> void:
-	if state != FlightState.LANDED:
+	if state != FlightState.LANDED or _takeoff_elapsed >= 0.0:
 		return
 	var launch_from := get_spacecraft_world_position()
 	# Capture what the player is looking at BEFORE the tilted surface rig is
 	# leveled. Position changes below do not alter this direction.
 	var view_heading_before_takeoff := get_view_heading()
 	var away := Vector2.RIGHT
+	var target_position := global_position + Vector3(
+		0.0,
+		start_position.z - launch_from.y,
+		0.0
+	)
 	if _landed_planet != null:
 		var center := _landed_planet.global_position
 		var horizontal := Vector2(launch_from.x - center.x, launch_from.z - center.z)
@@ -965,26 +991,65 @@ func take_off() -> void:
 				+ takeoff_clearance_margin
 			)
 			var target := Vector2(center.x, center.z) + away * clear_radius
-			global_position += Vector3(
+			target_position = global_position + Vector3(
 				target.x - launch_from.x,
 				start_position.z - launch_from.y,
 				target.y - launch_from.z
 			)
 
-	# Flight assumes an upright rig (the play field is a horizontal plane),
-	# so undo the surface tilt without changing where the headset is facing.
-	_level_rig(view_heading_before_takeoff)
+	# Animate position and leveling together. State remains LANDED during the
+	# glide, so gravity and collision cannot fight the transition.
+	_takeoff_from = global_position
+	_takeoff_to = target_position
+	_takeoff_from_basis = global_basis.orthonormalized()
+	_takeoff_to_basis = _get_level_basis(view_heading_before_takeoff)
+	_takeoff_away = away
+	_takeoff_elapsed = 0.0
 	_surface_walk_forward = Vector3.ZERO
 	_landing_elapsed = -1.0
-	state = FlightState.FLYING
-	velocity = away * takeoff_speed
-	_takeoff_grace = takeoff_grace_seconds
-	_prediction_elapsed = 0.0
+	velocity = Vector2.ZERO
 	_pulse_controllers(0.25, 0.15)
 	_spawn_dust(launch_from, _landed_planet, 18, 2.6, 0.7)
-	print("SpacecraftFlight|INFO: launched from %s back into the flight plane" % (
+	print("SpacecraftFlight|INFO: beginning continuous takeoff from %s" % (
 		_landed_planet.name if _landed_planet != null else "?"
 	))
+	if takeoff_animation_seconds <= 0.0:
+		global_position = _takeoff_to
+		global_basis = _takeoff_to_basis
+		_finish_takeoff()
+
+
+## Smoothly leave the surface and level the rig with one ease-in/out curve.
+func _advance_takeoff(delta: float) -> void:
+	_takeoff_elapsed += delta
+	var progress := clampf(
+		_takeoff_elapsed / maxf(takeoff_animation_seconds, 0.001),
+		0.0,
+		1.0
+	)
+	var eased := progress * progress * (3.0 - 2.0 * progress)
+	global_position = _takeoff_from.lerp(_takeoff_to, eased)
+	var from_rotation := _takeoff_from_basis.get_rotation_quaternion()
+	var to_rotation := _takeoff_to_basis.get_rotation_quaternion()
+	global_basis = Basis(from_rotation.slerp(to_rotation, eased))
+	if progress >= 1.0:
+		global_position = _takeoff_to
+		global_basis = _takeoff_to_basis
+		_finish_takeoff()
+
+
+func _finish_takeoff() -> void:
+	_takeoff_elapsed = -1.0
+	state = FlightState.FLYING
+	velocity = _takeoff_away * takeoff_speed
+	_takeoff_grace = takeoff_grace_seconds
+	_prediction_elapsed = 0.0
+	_update_predicted_flow()
+	print("SpacecraftFlight|INFO: continuous takeoff complete")
+
+
+func is_takeoff_animating() -> bool:
+	return _takeoff_elapsed >= 0.0
 
 
 func _handle_arrival_zone() -> void:
@@ -1218,7 +1283,7 @@ func _unhandled_input(event: InputEvent) -> void:
 
 func _try_fire(origin: Vector3, direction: Vector3) -> void:
 	# Bolts are a landed-only tool: collection happens ON planets, per spec.
-	if state != FlightState.LANDED:
+	if state != FlightState.LANDED or _takeoff_elapsed >= 0.0:
 		# Silent failure reads as a broken button; say why.
 		if state == FlightState.FLYING:
 			_set_banner("LAND ON A PLANET TO FIRE", 1.5)
@@ -1238,16 +1303,38 @@ func _try_fire(origin: Vector3, direction: Vector3) -> void:
 			_set_banner("AIMED INTO THE SURFACE", 1.2)
 			return
 
-	var bolt := MagicBoltScript.new() as MagicBolt
+	var bolt: MagicBolt
+	if is_instance_valid(_prewarmed_bolt):
+		bolt = _prewarmed_bolt
+		_prewarmed_bolt = null
+		# It entered the tree during loading, so all procedural render resources
+		# already exist. Reparenting is far cheaper than constructing them on the
+		# first trigger frame.
+		bolt.reparent(get_tree().current_scene, false)
+		bolt.process_mode = Node.PROCESS_MODE_INHERIT
+		bolt.visible = true
+	else:
+		bolt = MagicBoltScript.new() as MagicBolt
 	bolt.velocity = direction.normalized() * bolt_speed
 	bolt.hit_radius = bolt_hit_radius
 	bolt.gravity_scale = bolt_gravity_scale
 	bolt.ignored_planet = _landed_planet
 	bolt.setup(self, _beaver_director, _obstacles_root, _black_holes_root, play_area_min, play_area_max)
-	get_tree().current_scene.add_child(bolt)
+	if bolt.get_parent() == null:
+		get_tree().current_scene.add_child(bolt)
 	bolt.global_position = origin
 	_live_bolts.append(bolt)
 	_pulse_controllers(0.15, 0.08)
+
+
+func _prewarm_first_bolt() -> void:
+	if is_instance_valid(_prewarmed_bolt):
+		return
+	_prewarmed_bolt = MagicBoltScript.new() as MagicBolt
+	_prewarmed_bolt.name = "PrewarmedMagicBolt"
+	_prewarmed_bolt.visible = false
+	_prewarmed_bolt.process_mode = Node.PROCESS_MODE_DISABLED
+	add_child(_prewarmed_bolt)
 
 
 func _pulse_controllers(amplitude: float, duration: float) -> void:
@@ -1265,9 +1352,14 @@ func _update_status() -> void:
 		FlightState.WAITING:
 			message = "GRAVITY FIELD DISENGAGED\nPress B or Y to start"
 		FlightState.LANDED:
-			message = "LANDED · %s · REFUELED\nWASD/stick: walk   TRIGGER: bolt   B/Y: launch" % (
-				_landed_planet.name if _landed_planet != null else "?"
-			)
+			if _takeoff_elapsed >= 0.0:
+				message = "TAKING OFF · %.0f%%" % (
+					100.0 * clampf(_takeoff_elapsed / maxf(takeoff_animation_seconds, 0.001), 0.0, 1.0)
+				)
+			else:
+				message = "LANDED · %s · REFUELED\nWASD/stick: walk   TRIGGER: bolt   B/Y: launch" % (
+					_landed_planet.name if _landed_planet != null else "?"
+				)
 		FlightState.CRASHED:
 			message = "%s\nPress A/X or R to restart" % crash_message
 		FlightState.ARRIVED:
