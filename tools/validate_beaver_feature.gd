@@ -283,8 +283,7 @@ func _run_checks(scene: Node) -> void:
 		"touchdown target uses the real moon surface instead of its oversized collision shell"
 	)
 	_check(
-		float(flight.get("surface_stand_height")) >= 0.4
-		and float(flight.get("surface_stand_height")) <= 0.8
+		is_equal_approx(float(flight.get("surface_stand_height")), 0.9)
 		and absf(
 			expected_touchdown_radius
 			- sampled_surface_radius

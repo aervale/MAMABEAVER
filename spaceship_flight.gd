@@ -170,8 +170,9 @@ const MAP_EXPAND_BUTTONS: Array[StringName] = [
 ## Desired CAMERA height above the sampled rock while landed. The XR rig is
 ## translated to compensate the tracked local head offset, so this is the
 ## actual in-game viewpoint—not an extra height added under the player's feet.
-## A deliberately low 0.55 m keeps the ground close on these tiny planets.
-@export_range(0.1, 1.5, 0.05) var surface_stand_height := 0.55
+## A 0.9 m viewpoint keeps the ground close without placing the player below
+## the Beaver models' natural sight line.
+@export_range(0.1, 1.5, 0.05) var surface_stand_height := 0.9
 ## Footprints left behind while walking, so a planet you have already
 ## combed reads as visited. Capped per planet to bound the node count.
 @export_range(0, 400, 10) var max_footprints_per_planet := 120

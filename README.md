@@ -19,7 +19,7 @@ gravity fields and collision volumes of ten planets and five black holes.
 - The upper-right minimap is shared by desktop and in-headset displays.
 - Land on planets and shoot Beaver targets; delivering 20 to MIT wins.
 - Landing uses swept contact detection plus a small low-speed assist shell, then settles onto the sampled moon mesh rather than hovering on its larger collision sphere.
-- Landing directly places the tracked XR camera 0.55 m above the sampled mesh and pivots surface alignment about the camera, preventing real head height or rig tilt from lifting the view.
+- Landing directly places the tracked XR camera 0.9 m above the sampled mesh and pivots surface alignment about the camera, preventing real head height or rig tilt from lifting the view.
 - Quest trigger firing uses both the analogue value and its press event with one shared latch, so short pulls are not lost or duplicated.
 - Victory opens a shared desktop/XR results screen with Beaver points, remaining-fuel bonus, mission rank, and total score.
 - The start screen includes a large English controls and mission guide in the centre of the view.
