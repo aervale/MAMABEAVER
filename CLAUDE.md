@@ -165,7 +165,10 @@ things silently): `XROrigin3D`, `MoonExhibit`, `BlackHoleExhibit`, `SceneryExhib
 - `FlightState.LANDED` is deliberately appended LAST in the enum — the
   minimap colors the ship dot by enum ordinal. Never insert states mid-enum.
 - Beaver model drop-in: put the CC-BY Sketchfab beaver at
-  `models/beaver/beaver.glb` and the director uses it for the first
+  `models/beaver/beaver.glb`. If it ships an AnimationPlayer, `beaver.gd`
+  finds it, prefers a clip named idle/loop, forces LOOP_LINEAR (many glTF
+  exports are play-once) and seeks to a random offset so a planet's beavers
+  are not in lockstep. The procedural bob is suppressed when a clip plays and the director uses it for the first
   `imported_model_budget` (6) beavers; absent, all beavers use the
   procedural fallback. Don't raise the budget much — it's 17.5k tris each.
 - After touching gameplay, run both headless validators in `tools/`.

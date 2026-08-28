@@ -42,6 +42,8 @@ var target_height := 0.9
 var state := BeaverState.IDLE
 
 var _visual_root: Node3D
+## AnimationPlayer from the imported model, if it ships with one.
+var _animator: AnimationPlayer
 var _flight: Node3D
 var _home_parent: Node3D
 var _home_transform: Transform3D
@@ -71,6 +73,10 @@ func mark_home() -> void:
 func _process(delta: float) -> void:
 	match state:
 		BeaverState.IDLE:
+			# The imported model animates itself; the hand-rolled bob is only
+			# for the procedural fallback, and running both looks wrong.
+			if _animator != null:
+				return
 			# Gentle bob sells "alive" for the cost of one sine per frame.
 			_bob_phase += delta * BOB_SPEED
 			if _visual_root != null:
@@ -112,6 +118,8 @@ func _advance_tractor(delta: float) -> void:
 	if progress >= 1.0:
 		state = BeaverState.CARGO
 		visible = false
+		if _animator != null:
+			_animator.stop()
 		collected.emit(self)
 
 
@@ -125,6 +133,8 @@ func reset_to_spawn() -> void:
 	visible = true
 	state = BeaverState.IDLE
 	_tractor_elapsed = 0.0
+	if _animator != null and not _animator.is_playing():
+		_animator.play()
 
 
 func mark_delivered() -> void:
@@ -178,6 +188,47 @@ func _build_imported_visual() -> void:
 	imported.scale = Vector3.ONE * uniform_scale
 	# Feet on the surface: lift so the bounds' bottom sits at local y = 0.
 	imported.position = Vector3(0.0, -bounds.position.y * uniform_scale, 0.0)
+	_start_model_animation(imported)
+
+
+## Play the imported model's idle animation on a loop, if it has one.
+##
+## glTF exports name their clips whatever the original rig used, so rather
+## than hardcoding a name we prefer anything that looks like an idle and
+## otherwise fall back to the first clip. The loop mode is forced on: many
+## exports ship clips set to play once, which would leave the beaver frozen
+## on its last frame after a second or two.
+func _start_model_animation(model_root: Node) -> void:
+	var pending: Array[Node] = [model_root]
+	while not pending.is_empty():
+		var node: Node = pending.pop_back()
+		if node is AnimationPlayer:
+			_animator = node as AnimationPlayer
+			break
+		for child in node.get_children():
+			pending.append(child)
+	if _animator == null:
+		return
+
+	var clips := _animator.get_animation_list()
+	if clips.is_empty():
+		_animator = null
+		return
+
+	var chosen: String = clips[0]
+	for clip in clips:
+		var lowered := String(clip).to_lower()
+		if lowered.contains("idle") or lowered.contains("loop"):
+			chosen = clip
+			break
+
+	var animation := _animator.get_animation(chosen)
+	if animation != null:
+		animation.loop_mode = Animation.LOOP_LINEAR
+	# Stagger playback so a planet's worth of beavers is not in lockstep.
+	_animator.play(chosen)
+	_animator.seek(randf() * maxf(animation.length if animation != null else 1.0, 0.01), true)
+	print("BeaverCritter|INFO: playing imported animation '%s'" % chosen)
 
 
 func _build_procedural_visual() -> void:
