@@ -19,6 +19,7 @@
 [ext_resource type="PackedScene" uid="uid://cta0etdpjyry7" path="res://source/black_hole/source/black hole.fbx" id="18_black_hole_model"]
 [ext_resource type="Script" uid="uid://o6gsvrtrx353" path="res://black_hole.gd" id="19_black_hole"]
 [ext_resource type="Shader" path="res://starfield_sky.gdshader" id="20_starsky"]
+[ext_resource type="Script" path="res://ambient_dust.gd" id="21_dust"]
 
 [sub_resource type="StandardMaterial3D" id="Material_ship_marker"]
 albedo_color = Color(0.08, 0.75, 1, 1)
@@ -44,6 +45,16 @@ ambient_light_source = 2
 ambient_light_color = Color(0.2, 0.24, 0.38, 1)
 ambient_light_energy = 0.5
 reflected_light_source = 2
+fog_enabled = true
+fog_light_color = Color(0.78, 0.5, 0.3, 1)
+fog_light_energy = 1.0
+fog_sun_scatter = 0.4
+fog_density = 0.0012
+fog_sky_affect = 0.0
+glow_enabled = true
+glow_intensity = 0.55
+glow_bloom = 0.05
+glow_hdr_threshold = 1.05
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_hud"]
 content_margin_left = 18.0
@@ -116,6 +127,10 @@ script = ExtResource("3_hnd0v")
 
 [node name="ShipMarker" type="MeshInstance3D" parent="XROrigin3D" unique_id=1213250166]
 mesh = SubResource("SphereMesh_ship_marker")
+
+[node name="AmbientDust" type="Node3D" parent="XROrigin3D" unique_id=903318450]
+script = ExtResource("21_dust")
+sun_path = NodePath("../../SunLight")
 
 [node name="MoonExhibit" type="Node3D" parent="." unique_id=130901514]
 

@@ -21,11 +21,16 @@
 //                   faking the galaxy's dust lanes.
 //   4. core glow  — warm brightening toward core_direction, the galactic
 //                   center. Gives the band a bright anchor point.
-//   5. stars      — four cube-grid layers (each cell hashes to at most one
+//   5. sun + dust — reads the scene's DirectionalLight (LIGHT0_*
+//                   built-ins) so the backdrop always matches the actual
+//                   sun: a wide fbm-textured orange dust veil in the gas
+//                   pass, plus a tight halo and a hot core disc full-res
+//                   (the disc overshoots 1.0 so bloom picks it up).
+//   6. stars      — four cube-grid layers (each cell hashes to at most one
 //                   star with jittered position/brightness) with per-star
 //                   color temperature (blue-white .. warm). The two dim
 //                   layers get denser inside the band.
-//   6. dither     — ±0.5/255 hash noise so the dark gradients don't band
+//   7. dither     — ±0.5/255 hash noise so the dark gradients don't band
 //                   on Quest's display.
 shader_type sky;
 render_mode use_half_res_pass;
@@ -42,6 +47,11 @@ uniform vec3 band_normal = vec3(0.2, 1.0, 0.35);
 // Direction of the bright galactic core (should lie roughly in the band
 // plane, i.e. near-perpendicular to band_normal).
 uniform vec3 core_direction = vec3(0.9, -0.1, -0.42);
+
+// Sun-facing dust: warm haze scattered toward the DirectionalLight.
+uniform vec3 sun_dust_color : source_color = vec3(0.9, 0.45, 0.16);
+uniform float sun_dust_strength : hint_range(0.0, 2.0) = 0.55;
+uniform vec3 sun_halo_color : source_color = vec3(1.0, 0.72, 0.4);
 
 float hash13(vec3 p) {
 	p = fract(p * 0.1031);
@@ -141,6 +151,14 @@ void sky() {
 		float core_alignment = max(dot(dir, normalize(core_direction)), 0.0);
 		gas += core_color * pow(core_alignment, 9.0) * (0.35 + band) * nebula_intensity;
 
+		// Orange dust veil toward the sun: a wide scatter lobe, broken up
+		// by the same fbm so it reads as lit dust, not a flat gradient.
+		if (LIGHT0_ENABLED) {
+			float sun_amount = clamp(dot(dir, normalize(LIGHT0_DIRECTION)), 0.0, 1.0);
+			float veil = 0.55 + 0.45 * fbm(warped_dir * 4.7 + 7.0);
+			gas += sun_dust_color * pow(sun_amount, 3.0) * veil * sun_dust_strength;
+		}
+
 		COLOR = gas;
 		ALPHA = 1.0;
 	} else {
@@ -152,6 +170,15 @@ void sky() {
 		stars += star_layer(dir, 90.0, 0.82, 0.5) * 0.22 * (0.4 + band * 1.6);
 		stars += star_layer(dir, 140.0, 0.78, 0.55) * 0.10 * (0.2 + band * 2.2);
 		color += stars * star_brightness;
+
+		// Sun halo + core disc, crisp so they must be full-res. The core
+		// deliberately exceeds 1.0: the environment's glow pass blooms it.
+		if (LIGHT0_ENABLED) {
+			float sun_amount = clamp(dot(dir, normalize(LIGHT0_DIRECTION)), 0.0, 1.0);
+			color += sun_dust_color * pow(sun_amount, 12.0) * sun_dust_strength * 0.6;
+			color += sun_halo_color * pow(sun_amount, 220.0) * 2.2;
+			color += sun_halo_color * smoothstep(0.99965, 0.99995, sun_amount) * 22.0;
+		}
 
 		// Break up banding in the dark gradients (visible on Quest panels).
 		color += (hash13(dir * 1024.7) - 0.5) * (1.0 / 255.0);
