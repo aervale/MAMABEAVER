@@ -92,7 +92,8 @@ func _build_ship() -> void:
 	nose.top_radius = 0.02
 	nose.bottom_radius = 0.42
 	nose.height = 1.5
-	nose.radial_segments = 12
+	nose.radial_segments = 28
+	nose.rings = 4
 	nose.material = hull
 	var nose_instance := _add_mesh("Nose", nose, Vector3(0.0, -0.78, -2.1), _hull_root)
 	# Cylinders are built along +Y; tip it forward onto -Z.
@@ -121,7 +122,8 @@ func _build_ship() -> void:
 		pod.top_radius = 0.2
 		pod.bottom_radius = 0.2
 		pod.height = 1.0
-		pod.radial_segments = 12
+		pod.radial_segments = 24
+		pod.rings = 3
 		pod.material = trim
 		var pod_instance := _add_mesh(
 			"Engine%s" % ("L" if side < 0.0 else "R"),
@@ -141,8 +143,8 @@ func _build_ship() -> void:
 		var flame := SphereMesh.new()
 		flame.radius = 0.17
 		flame.height = 0.34
-		flame.radial_segments = 10
-		flame.rings = 5
+		flame.radial_segments = 20
+		flame.rings = 12
 		var flame_instance := _add_mesh(
 			"EngineGlow%s" % ("L" if side < 0.0 else "R"),
 			flame,

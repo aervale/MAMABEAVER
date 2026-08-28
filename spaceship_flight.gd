@@ -66,6 +66,7 @@ class_name SpacecraftFlightController
 
 const MagicBoltScript = preload("res://magic_bolt.gd")
 const SurfaceDustScript = preload("res://surface_dust.gd")
+const DepositEffectScript = preload("res://deposit_effect.gd")
 
 ## Moves the XR rig like a spacecraft over the XY play field. The spacecraft
 ## reference point is locked to a constant Z altitude while room-scale head
@@ -150,7 +151,12 @@ const MAP_EXPAND_BUTTONS: Array[StringName] = [
 @export_range(0.0, 1.0, 0.05) var bolt_gravity_scale := 0.0
 @export_range(1, 8, 1) var max_live_bolts := 3
 ## Speed you stroll around a planet's surface while landed.
-@export_range(0.5, 12.0, 0.5) var surface_walk_speed := 3.5
+## Deliberately unhurried: a brisk stroll around a small sphere swings the
+## horizon fast enough to be unpleasant in a headset.
+@export_range(0.5, 12.0, 0.5) var surface_walk_speed := 2.2
+## How long the touchdown glide takes. Snapping straight onto the surface
+## was the disorienting part of landing, so the ship now eases in.
+@export_range(0.0, 4.0, 0.1) var landing_animation_seconds := 1.4
 ## Warn when a planet is this many seconds away at the current closing speed.
 @export_range(0.5, 8.0, 0.25) var impact_warning_seconds := 2.5
 @export_node_path("Node3D") var beaver_director_path: NodePath
@@ -203,6 +209,9 @@ var _walk_dust_cooldown := 0.0
 var _surface_walk_forward := Vector3.ZERO
 var _impact_warning := ""
 var _warning_haptic_cooldown := 0.0
+var _landing_from := Vector3.ZERO
+var _landing_to := Vector3.ZERO
+var _landing_elapsed := -1.0
 var _map_expanded := false
 var _last_flight_input := Vector2.ZERO
 var _prediction_elapsed := 0.0
@@ -278,7 +287,10 @@ func _physics_process(delta: float) -> void:
 				_inside_arrival_zone = false
 	elif state == FlightState.LANDED:
 		_last_flight_input = Vector2.ZERO
-		_walk_on_surface(delta, _get_walk_input())
+		if _landing_elapsed >= 0.0:
+			_advance_landing(delta)
+		else:
+			_walk_on_surface(delta, _get_walk_input())
 	else:
 		_last_flight_input = Vector2.ZERO
 
@@ -301,6 +313,7 @@ func reset_flight() -> void:
 	_landed_planet = null
 	_takeoff_grace = 0.0
 	_surface_walk_forward = Vector3.ZERO
+	_landing_elapsed = -1.0
 	_level_rig()
 	_inside_arrival_zone = false
 	_banner_time_left = 0.0
@@ -648,7 +661,20 @@ func _land_on(planet: Node3D, collision_distance: float, impact_speed: float) ->
 	var away := camera_xz - planet_xz
 	away = away.normalized() if away.length() > 0.001 else Vector2.RIGHT
 	var target_xz := planet_xz + away * ring_radius
-	global_position += Vector3(target_xz.x - camera_xz.x, 0.0, target_xz.y - camera_xz.y)
+
+	# Glide in over landing_animation_seconds rather than teleporting.
+	# _physics_process advances this; snapping was the disorienting part of
+	# a touchdown, so the rig now travels the last stretch under animation.
+	_landing_from = global_position
+	_landing_to = global_position + Vector3(
+		target_xz.x - camera_xz.x,
+		0.0,
+		target_xz.y - camera_xz.y
+	)
+	_landing_elapsed = 0.0
+	if landing_animation_seconds <= 0.0:
+		global_position = _landing_to
+		_landing_elapsed = -1.0
 
 	_pulse_controllers(0.3, 0.2)
 	# Touchdown dust: bigger burst for a harder landing.
@@ -689,7 +715,7 @@ func _walk_on_surface(delta: float, input: Vector2) -> void:
 	# Settle upright relative to the surface whether or not you are moving,
 	# so the planet always reads as "down" underfoot. This sits before the
 	# input check on purpose: standing still must still level you out.
-	_align_rig_up(normal, delta * 3.5)
+	_align_rig_up(normal, delta * 2.0)
 	if input.is_zero_approx():
 		return
 
@@ -729,6 +755,24 @@ func _walk_on_surface(delta: float, input: Vector2) -> void:
 	if _walk_dust_cooldown <= 0.0:
 		_walk_dust_cooldown = 0.22
 		_spawn_dust(get_spacecraft_world_position(), _landed_planet, 3, 0.8, 0.45)
+
+
+## Smooth touchdown glide. Walking is suspended until it finishes, so the
+## player is never fighting the animation for control.
+func _advance_landing(delta: float) -> void:
+	_landing_elapsed += delta
+	var progress := clampf(_landing_elapsed / maxf(landing_animation_seconds, 0.001), 0.0, 1.0)
+	# Ease-out: close the gap quickly, then settle slowly.
+	var eased := 1.0 - pow(1.0 - progress, 3.0)
+	global_position = _landing_from.lerp(_landing_to, eased)
+
+	if _landed_planet != null:
+		var normal := get_spacecraft_world_position() - _landed_planet.global_position
+		if normal.length() > 0.01:
+			_align_rig_up(normal.normalized(), delta * 2.0)
+
+	if progress >= 1.0:
+		_landing_elapsed = -1.0
 
 
 ## Rotate the whole rig so its up-axis leans toward `target_up`. Walking
@@ -818,6 +862,7 @@ func take_off() -> void:
 	# so undo whatever tilt walking the sphere left behind.
 	_level_rig()
 	_surface_walk_forward = Vector3.ZERO
+	_landing_elapsed = -1.0
 	state = FlightState.FLYING
 	velocity = away * takeoff_speed
 	_takeoff_grace = takeoff_grace_seconds
@@ -849,12 +894,15 @@ func _handle_arrival_zone() -> void:
 		state = FlightState.ARRIVED
 		velocity = Vector2.ZERO
 		_pulse_controllers(0.45, 0.5)
+		# Final delivery gets the biggest send-off.
+		_play_deposit_effect(maxi(banked, 1))
 		print("SpacecraftFlight|INFO: all %d beavers delivered — mission complete" % total)
 	elif banked > 0:
 		_set_banner("BANKED %d BEAVER%s · %d TO GO" % [
 			banked, "" if banked == 1 else "S", total - delivered
 		], 3.0)
 		_pulse_controllers(0.3, 0.25)
+		_play_deposit_effect(banked)
 	else:
 		_set_banner("NO CARGO · SHOOT BEAVERS ON PLANETS", 2.5)
 
@@ -905,6 +953,20 @@ func _update_impact_warning(delta: float) -> void:
 		if _warning_haptic_cooldown <= 0.0:
 			_warning_haptic_cooldown = 0.35
 			_pulse_controllers(0.5, 0.12)
+
+
+## Stream the delivered beavers out of the hold and into the dome.
+func _play_deposit_effect(count: int) -> void:
+	var scene := get_tree().current_scene
+	if scene == null:
+		return
+	var effect: Node3D = DepositEffectScript.new()
+	effect.from_position = get_spacecraft_world_position()
+	# Aim for the top of the dome rather than its base.
+	effect.to_position = _logical_to_world(destination) + Vector3(0.0, 11.0, 0.0)
+	effect.beaver_count = clampi(count, 1, 24)
+	scene.add_child(effect)
+	effect.global_position = Vector3.ZERO
 
 
 func _set_banner(text: String, seconds: float) -> void:

@@ -37,6 +37,8 @@ const MODEL_PATH := "res://models/beaver/beaver.glb"
 
 var _beavers: Array[BeaverCritter] = []
 var _beavers_by_planet := {}
+## planet -> PackedVector3Array of local-space surface samples.
+var _surface_cache := {}
 var _cargo := 0
 var _delivered := 0
 
@@ -98,10 +100,13 @@ func _place_on_planet(
 	var sin_phi := sqrt(maxf(1.0 - cos_phi * cos_phi, 0.0))
 	var theta := PI * (1.0 + sqrt(5.0)) * k + spin
 	var up := Vector3(sin_phi * cos(theta), cos_phi, sin_phi * sin(theta))
-	# 0.97: the moon mesh is normalized by its LARGEST dimension, so it is
-	# slightly narrower than `radius` in most directions. Seating beavers a
-	# little into the surface beats having them hover at the limb.
-	var local_position := up * radius * 0.93
+
+	# Sit on the REAL surface. The moon mesh is a scanned, lumpy rock
+	# normalized by its largest dimension, so a fixed fraction of `radius`
+	# left beavers hovering over the narrow parts and buried in the wide
+	# ones. Sampling the actual geometry along this direction fixes both.
+	var surface := _surface_radius_along(planet, up, radius)
+	var local_position := up * (surface - beaver_height_meters * 0.12)
 
 	# Basis: local +Y = surface normal; +Z is any consistent tangent (the
 	# beaver mesh is built facing +Z). The reference axis is chosen so it is
@@ -115,6 +120,59 @@ func _place_on_planet(
 	# Must run AFTER the transform above: add_child() already fired the
 	# beaver's _ready(), which recorded an identity spawn point.
 	beaver.mark_home()
+
+
+## Distance from a planet's centre to its mesh surface along `direction`.
+##
+## Vertices are cached per planet on first use and subsampled (the moon mesh
+## has far more detail than placement needs), so this costs a few thousand
+## dot products per planet once at startup rather than per frame.
+func _surface_radius_along(planet: Node3D, direction: Vector3, fallback: float) -> float:
+	var samples: PackedVector3Array = _surface_cache.get(planet, PackedVector3Array())
+	if samples.is_empty():
+		samples = _collect_surface_samples(planet)
+		_surface_cache[planet] = samples
+	if samples.is_empty():
+		return fallback
+
+	# Nearest sample by ANGLE, then use its distance from the centre.
+	var best_dot := -2.0
+	var best_length := fallback
+	for point in samples:
+		var length := point.length()
+		if length < 0.0001:
+			continue
+		var alignment := point.dot(direction) / length
+		if alignment > best_dot:
+			best_dot = alignment
+			best_length = length
+	return best_length
+
+
+## Every mesh vertex under the planet, in the PLANET's local space,
+## subsampled to keep startup cheap.
+func _collect_surface_samples(planet: Node3D) -> PackedVector3Array:
+	var samples := PackedVector3Array()
+	var pending: Array[Node] = [planet]
+	var to_planet := planet.global_transform.affine_inverse()
+	while not pending.is_empty():
+		var node: Node = pending.pop_back()
+		# Never sample the beavers themselves.
+		if node is BeaverCritter:
+			continue
+		if node is MeshInstance3D and (node as MeshInstance3D).mesh != null:
+			var mesh_instance := node as MeshInstance3D
+			var to_local := to_planet * mesh_instance.global_transform
+			var faces := mesh_instance.mesh.get_faces()
+			# Stride: placement needs shape, not every triangle corner.
+			var stride := maxi(1, faces.size() / 3000)
+			var index := 0
+			while index < faces.size():
+				samples.append(to_local * faces[index])
+				index += stride
+		for child in node.get_children():
+			pending.append(child)
+	return samples
 
 
 func _on_beaver_collected(_beaver: Node3D) -> void:

@@ -201,24 +201,24 @@ func _build_procedural_visual() -> void:
 	var body := SphereMesh.new()
 	body.radius = 0.28
 	body.height = 0.56
-	body.radial_segments = 12
-	body.rings = 6
+	body.radial_segments = 24
+	body.rings = 14
 	body.material = fur
 	_add_part(body, Vector3(0.0, 0.3, 0.0)).scale = Vector3(1.0, 1.0, 1.2)
 
 	var head := SphereMesh.new()
 	head.radius = 0.16
 	head.height = 0.32
-	head.radial_segments = 10
-	head.rings = 5
+	head.radial_segments = 20
+	head.rings = 12
 	head.material = fur
 	_add_part(head, Vector3(0.0, 0.56, 0.2))
 
 	var muzzle := SphereMesh.new()
 	muzzle.radius = 0.09
 	muzzle.height = 0.18
-	muzzle.radial_segments = 8
-	muzzle.rings = 4
+	muzzle.radial_segments = 16
+	muzzle.rings = 10
 	muzzle.material = dark
 	_add_part(muzzle, Vector3(0.0, 0.5, 0.34))
 
@@ -232,8 +232,8 @@ func _build_procedural_visual() -> void:
 	var eye := SphereMesh.new()
 	eye.radius = 0.028
 	eye.height = 0.056
-	eye.radial_segments = 6
-	eye.rings = 3
+	eye.radial_segments = 12
+	eye.rings = 8
 	eye.material = black
 	_add_part(eye, Vector3(-0.07, 0.62, 0.32))
 	_add_part(eye, Vector3(0.07, 0.62, 0.32))
@@ -241,8 +241,8 @@ func _build_procedural_visual() -> void:
 	var ear := SphereMesh.new()
 	ear.radius = 0.04
 	ear.height = 0.08
-	ear.radial_segments = 6
-	ear.rings = 3
+	ear.radial_segments = 14
+	ear.rings = 8
 	ear.material = dark
 	_add_part(ear, Vector3(-0.1, 0.7, 0.14))
 	_add_part(ear, Vector3(0.1, 0.7, 0.14))
@@ -254,11 +254,35 @@ func _build_procedural_visual() -> void:
 	var tail_part := _add_part(tail, Vector3(0.0, 0.08, -0.4))
 	tail_part.rotation_degrees = Vector3(-12.0, 0.0, 0.0)
 
-	var foot := BoxMesh.new()
-	foot.size = Vector3(0.1, 0.05, 0.16)
+	# Rounded feet and stubby arms: the boxy silhouette read as low-poly
+	# even at distance, and these are cheap to add.
+	var foot := SphereMesh.new()
+	foot.radius = 0.075
+	foot.height = 0.15
+	foot.radial_segments = 14
+	foot.rings = 8
 	foot.material = dark
-	_add_part(foot, Vector3(-0.13, 0.025, 0.08))
-	_add_part(foot, Vector3(0.13, 0.025, 0.08))
+	_add_part(foot, Vector3(-0.13, 0.06, 0.1)).scale = Vector3(0.85, 0.6, 1.4)
+	_add_part(foot, Vector3(0.13, 0.06, 0.1)).scale = Vector3(0.85, 0.6, 1.4)
+
+	var arm := SphereMesh.new()
+	arm.radius = 0.07
+	arm.height = 0.14
+	arm.radial_segments = 12
+	arm.rings = 8
+	arm.material = fur
+	_add_part(arm, Vector3(-0.24, 0.34, 0.12)).scale = Vector3(0.8, 1.5, 0.8)
+	_add_part(arm, Vector3(0.24, 0.34, 0.12)).scale = Vector3(0.8, 1.5, 0.8)
+
+	# Rounded haunches blend the body into the tail.
+	var haunch := SphereMesh.new()
+	haunch.radius = 0.15
+	haunch.height = 0.3
+	haunch.radial_segments = 16
+	haunch.rings = 10
+	haunch.material = fur
+	_add_part(haunch, Vector3(-0.17, 0.17, -0.14)).scale = Vector3(1.0, 0.85, 1.2)
+	_add_part(haunch, Vector3(0.17, 0.17, -0.14)).scale = Vector3(1.0, 0.85, 1.2)
 
 
 func _add_part(mesh: Mesh, at: Vector3) -> MeshInstance3D:

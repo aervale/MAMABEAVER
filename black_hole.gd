@@ -252,10 +252,10 @@ func _build_procedural_visual() -> void:
 	var photon_material := StandardMaterial3D.new()
 	photon_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	photon_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	photon_material.albedo_color = Color(1.0, 0.56, 0.16, 0.82)
+	photon_material.albedo_color = Color(1.0, 0.72, 0.34, 0.88)
 	photon_material.emission_enabled = true
-	photon_material.emission = Color(1.0, 0.24, 0.035)
-	photon_material.emission_energy_multiplier = 5.0
+	photon_material.emission = Color(1.0, 0.42, 0.08)
+	photon_material.emission_energy_multiplier = 7.0
 	photon_material.cull_mode = BaseMaterial3D.CULL_DISABLED
 
 	_add_torus(
@@ -270,6 +270,22 @@ func _build_procedural_visual() -> void:
 		accretion_disk_radius * 0.66,
 		photon_material
 	)
+
+	# The signature Interstellar silhouette: light from the FAR side of the
+	# disk is bent up over the shadow and down beneath it, so the disk
+	# appears to wrap right around the hole. Real lensing would fall out of
+	# the ray maths; here two rings standing perpendicular to the disk give
+	# the same read for a handful of triangles.
+	for spec in [["LensedArcOver", 0.0], ["LensedArcUnder", 90.0]]:
+		var arc := TorusMesh.new()
+		arc.inner_radius = capture_radius * 1.16
+		arc.outer_radius = capture_radius * 1.3
+		arc.rings = 56
+		arc.ring_segments = 10
+		arc.material = photon_material
+		var arc_instance := _add_mesh(spec[0] as String, arc, Vector3.ZERO, _disk_root)
+		# Stand the ring on edge, then roll it so the two arcs cross.
+		arc_instance.rotation_degrees = Vector3(90.0, spec[1] as float, 0.0)
 
 func _add_torus(
 	name_value: String,

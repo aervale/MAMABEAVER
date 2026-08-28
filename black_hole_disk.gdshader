@@ -7,12 +7,14 @@
 shader_type spatial;
 render_mode unshaded, cull_disabled, blend_add, depth_draw_never;
 
-uniform vec3 inner_color : source_color = vec3(1.0, 0.92, 0.72);
-uniform vec3 hot_color : source_color = vec3(1.0, 0.28, 0.035);
-uniform vec3 outer_color : source_color = vec3(0.18, 0.025, 0.32);
+// Tuned to the reference render: white-hot at the inner edge, falling
+// through orange to deep ember red rather than purple.
+uniform vec3 inner_color : source_color = vec3(1.0, 0.97, 0.9);
+uniform vec3 hot_color : source_color = vec3(1.0, 0.45, 0.1);
+uniform vec3 outer_color : source_color = vec3(0.42, 0.06, 0.02);
 uniform float inner_radius : hint_range(0.1, 0.8) = 0.34;
 uniform float spin_speed : hint_range(-5.0, 5.0) = 0.42;
-uniform float emission_energy : hint_range(0.0, 12.0) = 5.0;
+uniform float emission_energy : hint_range(0.0, 12.0) = 7.5;
 
 
 void fragment() {

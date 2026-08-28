@@ -43,43 +43,59 @@ func _build_model() -> void:
 	# like the rest of this model.
 	for spec in [
 		# [name, radius, position, non-uniform scale]
-		["AsteroidCore", 6.5, Vector3(0.0, -3.4, 0.0), Vector3(1.0, 0.52, 0.85)],
-		["AsteroidLumpA", 3.0, Vector3(4.6, -2.7, 1.6), Vector3(1.0, 0.7, 1.05)],
-		["AsteroidLumpB", 2.6, Vector3(-4.3, -2.9, -1.7), Vector3(1.1, 0.65, 1.0)],
-		["AsteroidLumpC", 2.0, Vector3(1.4, -3.7, -3.9), Vector3(1.0, 0.8, 1.0)],
-		["AsteroidKeel", 1.7, Vector3(-0.6, -6.2, 0.8), Vector3(0.85, 1.7, 0.85)],
+		["AsteroidCore", 10.0, Vector3(0.0, -4.2, 0.0), Vector3(1.0, 0.46, 0.78)],
+		["AsteroidLumpA", 4.4, Vector3(7.8, -3.4, 1.6), Vector3(1.0, 0.7, 1.05)],
+		["AsteroidLumpB", 4.0, Vector3(-7.4, -3.6, -1.7), Vector3(1.1, 0.65, 1.0)],
+		["AsteroidLumpC", 3.0, Vector3(1.4, -4.6, -4.6), Vector3(1.0, 0.8, 1.0)],
+		["AsteroidKeel", 2.4, Vector3(-0.6, -8.0, 0.8), Vector3(0.85, 1.7, 0.85)],
 	]:
 		var rock_radius := spec[1] as float
 		var rock_mesh := SphereMesh.new()
 		rock_mesh.radius = rock_radius
 		rock_mesh.height = rock_radius * 2.0
-		rock_mesh.radial_segments = 20
-		rock_mesh.rings = 10
+		rock_mesh.radial_segments = 32
+		rock_mesh.rings = 18
 		rock_mesh.material = _rock
 		var rock := _add_mesh(spec[0] as String, rock_mesh, spec[2] as Vector3)
 		rock.scale = spec[3] as Vector3
 
 	# Foundation and main pavilion.
-	_add_box("LowerPlinth", Vector3(8.2, 0.45, 5.8), Vector3(0, 0.225, 0), _limestone)
-	_add_box("UpperPlinth", Vector3(7.6, 0.35, 5.3), Vector3(0, 0.625, 0), _limestone)
-	_add_box("MainHall", Vector3(7.0, 4.9, 4.6), Vector3(0, 3.25, 0.15), _shadow)
+	# Widened to match the real Great Dome's broad neoclassical frontage;
+	# the previous footprint read as a narrow tower.
+	_add_box("LowerPlinth", Vector3(14.5, 0.5, 6.6), Vector3(0, 0.25, 0), _limestone)
+	_add_box("UpperPlinth", Vector3(13.6, 0.4, 6.1), Vector3(0, 0.7, 0), _limestone)
+	_add_box("MainHall", Vector3(12.6, 4.9, 5.2), Vector3(0, 3.35, 0.15), _shadow)
+	# Flanking wings give the building real width.
+	for side in [-1.0, 1.0]:
+		_add_box(
+			"OuterWing%s" % ("L" if side < 0.0 else "R"),
+			Vector3(3.4, 4.1, 5.0),
+			Vector3(side * 8.4, 2.95, 0.0),
+			_limestone
+		)
+		_add_box(
+			"OuterWingRoof%s" % ("L" if side < 0.0 else "R"),
+			Vector3(3.8, 0.34, 5.4),
+			Vector3(side * 8.4, 5.2, 0.0),
+			_limestone
+		)
 
 	# Side walls keep the silhouette solid while the darker central facade
 	# gives the colonnade readable depth.
-	_add_box("LeftWing", Vector3(0.75, 4.7, 4.9), Vector3(-3.15, 3.35, 0), _limestone)
-	_add_box("RightWing", Vector3(0.75, 4.7, 4.9), Vector3(3.15, 3.35, 0), _limestone)
-	_add_box("FacadeShadow", Vector3(5.6, 3.8, 0.18), Vector3(0, 3.35, -2.23), _glass)
+	_add_box("LeftWing", Vector3(0.85, 4.7, 5.2), Vector3(-6.0, 3.35, 0), _limestone)
+	_add_box("RightWing", Vector3(0.85, 4.7, 5.2), Vector3(6.0, 3.35, 0), _limestone)
+	_add_box("FacadeShadow", Vector3(11.0, 3.8, 0.2), Vector3(0, 3.35, -2.5), _glass)
 
 	# Classical front colonnade.
 	var column_mesh := CylinderMesh.new()
 	column_mesh.top_radius = 0.17
 	column_mesh.bottom_radius = 0.22
 	column_mesh.height = 3.8
-	column_mesh.radial_segments = 12
+	column_mesh.radial_segments = 24
 	column_mesh.rings = 0
 	column_mesh.material = _limestone
-	for index in 10:
-		var x := lerpf(-2.7, 2.7, float(index) / 9.0)
+	for index in 16:
+		var x := lerpf(-5.4, 5.4, float(index) / 15.0)
 		_add_mesh("FrontColumn%02d" % index, column_mesh, Vector3(x, 3.15, -2.5))
 		_add_box(
 			"ColumnBase%02d" % index,
@@ -95,31 +111,32 @@ func _build_model() -> void:
 		)
 
 	# Entablature, a text-free MIT-red destination band and roof plates.
-	_add_box("LowerEntablature", Vector3(6.4, 0.32, 0.65), Vector3(0, 5.35, -2.45), _limestone)
-	_add_box("MITBand", Vector3(5.7, 0.32, 0.12), Vector3(0, 5.82, -2.81), _mit_red)
-	_add_box("UpperEntablature", Vector3(6.8, 0.42, 0.75), Vector3(0, 6.15, -2.36), _limestone)
-	_add_box("RoofSlab", Vector3(8.0, 0.38, 5.7), Vector3(0, 6.55, 0), _limestone)
-	_add_box("RoofCap", Vector3(7.2, 0.26, 5.0), Vector3(0, 6.86, 0), _limestone)
+	_add_box("LowerEntablature", Vector3(12.2, 0.34, 0.7), Vector3(0, 5.35, -2.72), _limestone)
+	_add_box("MITBand", Vector3(11.2, 0.34, 0.14), Vector3(0, 5.85, -3.08), _mit_red)
+	_add_box("UpperEntablature", Vector3(12.8, 0.46, 0.82), Vector3(0, 6.2, -2.62), _limestone)
+	_add_box("Pediment", Vector3(7.4, 0.9, 0.5), Vector3(0, 6.9, -2.6), _limestone)
+	_add_box("RoofSlab", Vector3(14.2, 0.4, 6.4), Vector3(0, 6.6, 0), _limestone)
+	_add_box("RoofCap", Vector3(13.2, 0.28, 5.7), Vector3(0, 6.92, 0), _limestone)
 
 	# Circular drum and stepped base for the Great Dome.
-	_add_cylinder("DrumBase", 2.45, 0.55, Vector3(0, 7.18, 0), _limestone, 32)
-	_add_cylinder("DrumShadow", 2.18, 0.48, Vector3(0, 7.65, 0), _glass, 32)
-	_add_cylinder("DrumCrown", 2.32, 0.28, Vector3(0, 8.03, 0), _limestone, 32)
+	_add_cylinder("DrumBase", 3.3, 0.6, Vector3(0, 7.3, 0), _limestone, 48)
+	_add_cylinder("DrumShadow", 3.0, 0.55, Vector3(0, 7.85, 0), _glass, 48)
+	_add_cylinder("DrumCrown", 3.15, 0.3, Vector3(0, 8.3, 0), _limestone, 48)
 
 	# An oblate sphere buried in the drum reads as a hemispherical dome while
 	# remaining much cheaper than a bespoke imported mesh.
 	var dome_mesh := SphereMesh.new()
-	dome_mesh.radius = 2.15
-	dome_mesh.height = 4.3
-	dome_mesh.radial_segments = 32
-	dome_mesh.rings = 12
+	dome_mesh.radius = 2.95
+	dome_mesh.height = 5.9
+	dome_mesh.radial_segments = 56
+	dome_mesh.rings = 28
 	dome_mesh.material = _dome_copper
-	var dome := _add_mesh("GreatDome", dome_mesh, Vector3(0, 8.55, 0))
+	var dome := _add_mesh("GreatDome", dome_mesh, Vector3(0, 8.8, 0))
 	dome.scale = Vector3(1.0, 0.62, 1.0)
 
-	_add_cylinder("LanternBase", 0.62, 0.22, Vector3(0, 9.94, 0), _limestone, 20)
-	_add_cylinder("Lantern", 0.42, 0.44, Vector3(0, 10.25, 0), _glass, 20)
-	_add_cylinder("LanternCap", 0.57, 0.16, Vector3(0, 10.55, 0), _beacon, 20)
+	_add_cylinder("LanternBase", 0.8, 0.24, Vector3(0, 10.6, 0), _limestone, 32)
+	_add_cylinder("Lantern", 0.55, 0.5, Vector3(0, 10.98, 0), _glass, 32)
+	_add_cylinder("LanternCap", 0.72, 0.18, Vector3(0, 11.34, 0), _beacon, 32)
 
 	# A compact beacon identifies the building as the goal without replacing
 	# it with another large collision sphere.
@@ -129,7 +146,7 @@ func _build_model() -> void:
 	beacon_mesh.radial_segments = 12
 	beacon_mesh.rings = 6
 	beacon_mesh.material = _beacon
-	_add_mesh("GoalBeacon", beacon_mesh, Vector3(0, 10.88, 0))
+	_add_mesh("GoalBeacon", beacon_mesh, Vector3(0, 11.66, 0))
 
 	# The dome sits at the far corner of the field and was reading as a dim
 	# grey lump. A soft white halo plus a wide warm light makes it the
