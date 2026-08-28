@@ -47,8 +47,20 @@ func _run_checks(scene: Node) -> void:
 
 	# --- spawning ---
 	var total := int(director.call("get_total_count"))
-	_check(total == 30, "director spawns 3 beavers on each of 10 planets (got %d)" % total)
-	_check(int(director.call("get_planet_beaver_count", planet)) == 3, "Planet01 hosts 3 beavers")
+	var per_planet := int(director.get("beavers_per_planet"))
+	_check(total == per_planet * 10, "director spawns %d beavers on each of 10 planets (got %d)" % [per_planet, total])
+	_check(int(director.call("get_planet_beaver_count", planet)) == per_planet, "Planet01 hosts them all")
+	# Full-sphere spread: beavers must exist well above AND below the plane.
+	var highest := -INF
+	var lowest := INF
+	for c in planet.get_children():
+		if c.name.begins_with("Beaver"):
+			highest = maxf(highest, (c as Node3D).global_position.y)
+			lowest = minf(lowest, (c as Node3D).global_position.y)
+	_check(
+		highest > planet.global_position.y + 2.0 and lowest < planet.global_position.y - 2.0,
+		"beavers cover the whole sphere, not just the flight-plane ring (y %.1f..%.1f)" % [lowest, highest]
+	)
 
 	# Remember a beaver's real spawn point: reset must restore POSITION, not
 	# just state. (An earlier bug parked every beaver at the planet centre
@@ -100,34 +112,60 @@ func _run_checks(scene: Node) -> void:
 	var before_walk: Vector3 = flight.call("get_spacecraft_world_position")
 	var radius_before := Vector2(before_walk.x, before_walk.z).distance_to(
 		Vector2(planet.global_position.x, planet.global_position.z))
-	# One second of "stick held sideways".
-	for i in 60:
+	# Two seconds of "stick held forward" — enough to climb off the ring.
+	for i in 120:
 		flight.call("_walk_on_surface", 1.0 / 60.0, Vector2(0.0, 1.0))
 	var after_walk: Vector3 = flight.call("get_spacecraft_world_position")
-	var radius_after := Vector2(after_walk.x, after_walk.z).distance_to(
-		Vector2(planet.global_position.x, planet.global_position.z))
 	var walked := before_walk.distance_to(after_walk)
-	_check(walked > 1.0, "walking actually moves the ship around the planet (%.2f m)" % walked)
+	_check(walked > 1.0, "walking actually moves the ship over the planet (%.2f m)" % walked)
+	# The invariant is now the 3D sphere radius, not a flat ring.
+	var sphere_before := before_walk.distance_to(planet.global_position)
+	var sphere_after := after_walk.distance_to(planet.global_position)
 	_check(
-		absf(radius_after - radius_before) < 0.05,
-		"walking stays on the surface ring (r %.2f -> %.2f)" % [radius_before, radius_after]
+		absf(sphere_after - sphere_before) < 0.05,
+		"walking stays on the sphere (r %.2f -> %.2f)" % [sphere_before, sphere_after]
+	)
+	_check(
+		absf(after_walk.y - 10.0) > 0.5,
+		"walking leaves the flight plane — you can climb the sphere (y=%.2f)" % after_walk.y
 	)
 	_check(int(flight.get("state")) == STATE_LANDED, "walking does not leave the LANDED state")
 
-	# Pushing straight into the planet must not move you.
-	var into := (Vector2(planet.global_position.x, planet.global_position.z)
-		- Vector2(after_walk.x, after_walk.z)).normalized()
-	flight.call("_walk_on_surface", 1.0 / 60.0, into)
-	var after_push: Vector3 = flight.call("get_spacecraft_world_position")
-	_check(after_push.distance_to(after_walk) < 0.01, "pushing into the planet does not burrow through it")
+	# Walking in every direction must never break the sphere constraint.
+	for dir in [Vector2(1, 0), Vector2(-1, 0), Vector2(0, -1), Vector2(0.7, 0.7)]:
+		for i in 30:
+			flight.call("_walk_on_surface", 1.0 / 60.0, dir)
+	var after_roam: Vector3 = flight.call("get_spacecraft_world_position")
+	_check(
+		absf(after_roam.distance_to(planet.global_position) - sphere_before) < 0.05,
+		"walking any direction never burrows into or floats off the sphere"
+	)
 
 	# --- takeoff + grace ---
 	flight.call("take_off")
 	_check(int(flight.get("state")) == STATE_FLYING, "B/Y takes off")
+	var launched: Vector3 = flight.call("get_spacecraft_world_position")
+	_check(absf(launched.y - 10.0) < 0.01, "takeoff returns to the flight plane (y=%.2f)" % launched.y)
+	var clearance := Vector2(launched.x, launched.z).distance_to(
+		Vector2(planet.global_position.x, planet.global_position.z))
+	_check(clearance > 5.0, "takeoff exits clear of the planet cross-section (%.2f m)" % clearance)
 	await physics_frame
 	_check(int(flight.get("state")) == STATE_FLYING, "takeoff grace prevents instant re-collision")
 	flight.call("_try_fire", Vector3.ZERO, Vector3(1, 0, 0))
 	_check(_count_bolts(scene) <= 1, "cannot fire while flying")
+
+	# --- impact warning fires on a fast approach, stays quiet on a slow one ---
+	flight.call("reset_flight")
+	flight.call("start_flight")
+	_teleport(flight, planet.global_position + Vector3(-30.0, 0.0, 0.0), Vector2(14.0, 0.0))
+	flight.call("_update_impact_warning", 0.016)
+	_check(not String(flight.get("_impact_warning")).is_empty(), "fast approach raises the impact warning")
+	flight.set("velocity", Vector2(2.0, 0.0))
+	flight.call("_update_impact_warning", 0.016)
+	_check(String(flight.get("_impact_warning")).is_empty(), "a landable approach speed does not warn")
+	_teleport(flight, planet.global_position + Vector3(-30.0, 0.0, 0.0), Vector2(-14.0, 0.0))
+	flight.call("_update_impact_warning", 0.016)
+	_check(String(flight.get("_impact_warning")).is_empty(), "flying AWAY from a planet does not warn")
 
 	# --- fast contact = crash ---
 	flight.call("reset_flight")
@@ -150,22 +188,22 @@ func _run_checks(scene: Node) -> void:
 		while int(director.call("get_cargo_count")) == 0 and deadline.time_left > 0.0:
 			await process_frame
 		_check(int(director.call("get_cargo_count")) == 1, "tractored beaver becomes cargo")
-		_check(int(director.call("get_planet_beaver_count", planet)) == 2, "planet badge count drops")
+		_check(int(director.call("get_planet_beaver_count", planet)) == per_planet - 1, "planet badge count drops")
 
 	# --- banking at MIT (not a win while beavers remain) ---
 	var destination: Vector3 = flight.get("destination")
 	_teleport(flight, Vector3(destination.x, 10.0, destination.y), Vector2.ZERO)
 	await physics_frame
 	await physics_frame
-	_check(int(flight.get("state")) == STATE_FLYING, "arriving with 29 undelivered beavers is not a win")
+	_check(int(flight.get("state")) == STATE_FLYING, "arriving with beavers still out there is not a win")
 	_check(int(director.call("get_delivered_count")) == 1, "cargo banks on arrival")
 	_check(int(director.call("get_cargo_count")) == 0, "cargo empties after banking")
 
 	# --- reset restores everything ---
 	flight.call("reset_flight")
 	_check(int(director.call("get_delivered_count")) == 0, "reset clears delivered")
-	_check(int(director.call("get_total_count")) == 30, "reset keeps all beavers")
-	_check(int(director.call("get_planet_beaver_count", planet)) == 3, "reset returns beavers to their planets")
+	_check(int(director.call("get_total_count")) == total, "reset keeps all beavers")
+	_check(int(director.call("get_planet_beaver_count", planet)) == per_planet, "reset returns beavers to their planets")
 	if probe != null:
 		_check(
 			probe.global_position.distance_to(probe_home) < 0.01,

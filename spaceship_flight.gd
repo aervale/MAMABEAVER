@@ -37,8 +37,13 @@
 # STATE MACHINE: WAITING (spawn/reset; gravity disengaged so you can't
 # drift into a planet while reading the HUD) -> FLYING on B/Y -> then:
 #   * touch a planet SLOWER than landing_speed_threshold -> LANDED: snapped
-#     to the surface contact circle, tank refueled, trigger armed. B/Y
-#     launches (short grace window ignores the departed planet).
+#     to the surface, tank refueled, trigger armed. While landed you walk
+#     the planet's FULL SPHERE (the altitude lock is lifted only in this
+#     state), and B/Y launches you back into the flight plane at a point
+#     clear of the planet, with a short grace window so you don't
+#     immediately re-collide.
+#   * approaching a planet faster than you could land triggers a loud HUD
+#     warning (see _update_impact_warning) before you hit it.
 #   * touch a planet faster, or any black hole capture -> CRASHED.
 #   * reach MIT: cargo is BANKED (run continues); ARRIVED (win) only when
 #     every beaver is delivered — see beaver_director.gd. Without a
@@ -132,6 +137,8 @@ const FIRE_BUTTONS: Array[StringName] = [
 @export_range(1, 8, 1) var max_live_bolts := 3
 ## Speed you stroll around a planet's surface while landed.
 @export_range(0.5, 12.0, 0.5) var surface_walk_speed := 3.5
+## Warn when a planet is this many seconds away at the current closing speed.
+@export_range(0.5, 8.0, 0.25) var impact_warning_seconds := 2.5
 @export_node_path("Node3D") var beaver_director_path: NodePath
 
 @export_group("Planet gravity")
@@ -176,6 +183,8 @@ var _inside_arrival_zone := false
 var _banner_text := ""
 var _banner_time_left := 0.0
 var _walk_dust_cooldown := 0.0
+var _impact_warning := ""
+var _warning_haptic_cooldown := 0.0
 var _last_flight_input := Vector2.ZERO
 var _prediction_elapsed := 0.0
 
@@ -215,6 +224,7 @@ func _physics_process(delta: float) -> void:
 	_restart_was_pressed = restart_pressed
 
 	_poll_vr_fire()
+	_update_impact_warning(delta)
 	if _takeoff_grace > 0.0:
 		_takeoff_grace -= delta
 		if _takeoff_grace <= 0.0:
@@ -248,7 +258,7 @@ func _physics_process(delta: float) -> void:
 				_inside_arrival_zone = false
 	elif state == FlightState.LANDED:
 		_last_flight_input = Vector2.ZERO
-		_walk_on_surface(delta, _get_flight_input())
+		_walk_on_surface(delta, _get_walk_input())
 	else:
 		_last_flight_input = Vector2.ZERO
 
@@ -379,6 +389,30 @@ func _get_flight_input() -> Vector2:
 	var result := _head_relative_stick(stick) if stick.length() >= joystick_deadzone else Vector2.ZERO
 
 	# WASD is a desktop-only convenience for testing without a headset.
+	var keyboard := Vector2.ZERO
+	if Input.is_key_pressed(KEY_A):
+		keyboard.x -= 1.0
+	if Input.is_key_pressed(KEY_D):
+		keyboard.x += 1.0
+	if Input.is_key_pressed(KEY_S):
+		keyboard.y -= 1.0
+	if Input.is_key_pressed(KEY_W):
+		keyboard.y += 1.0
+	if not keyboard.is_zero_approx():
+		result = keyboard.normalized()
+	return result
+
+
+## Raw stick / WASD, NOT converted to world space: walking maps it through
+## the camera basis itself (see _walk_on_surface). x = strafe, y = forward.
+func _get_walk_input() -> Vector2:
+	var stick := Vector2.ZERO
+	if _left_controller != null:
+		stick = _left_controller.get_vector2(&"primary")
+	if stick.length() < joystick_deadzone and _right_controller != null:
+		stick = _right_controller.get_vector2(&"primary")
+	var result := stick if stick.length() >= joystick_deadzone else Vector2.ZERO
+
 	var keyboard := Vector2.ZERO
 	if Input.is_key_pressed(KEY_A):
 		keyboard.x -= 1.0
@@ -607,39 +641,50 @@ func _land_on(planet: Node3D, collision_distance: float, impact_speed: float) ->
 	print("SpacecraftFlight|INFO: landed on %s at %.1f m/s, refueled" % [planet.name, impact_speed])
 
 
-## While landed you can stroll AROUND the planet along the ring where its
-## surface meets the flight plane. Altitude stays locked (the whole game is
-## a fixed-altitude 2D field), so the ring IS the walkable surface — this is
-## also how you reach the beavers that spawned on the far side.
+## While landed you walk the planet's whole sphere. `input` is raw
+## stick/WASD (x = strafe, y = forward) and is mapped through the ACTIVE
+## camera's basis, so you always move where you are looking — including up
+## and over the poles.
+##
+## The move is done in 3D and then re-projected onto the sphere, which keeps
+## your distance from the planet's centre exactly constant no matter how the
+## steps accumulate.
 func _walk_on_surface(delta: float, input: Vector2) -> void:
 	if _walk_dust_cooldown > 0.0:
 		_walk_dust_cooldown -= delta
 	if _landed_planet == null or input.is_zero_approx():
 		return
 
-	var camera_position := get_spacecraft_world_position()
-	# Flatten to a 2D ground vector FIRST: mixing Vector3.y (altitude) with
-	# Vector2.y (world Z) here silently teleported the ship off the planet.
-	var camera_xz := Vector2(camera_position.x, camera_position.z)
-	var planet_xz := Vector2(_landed_planet.global_position.x, _landed_planet.global_position.z)
-	var offset := camera_xz - planet_xz
-	var ring_radius := offset.length()
-	if ring_radius < 0.01:
+	var position_now := get_spacecraft_world_position()
+	var center := _landed_planet.global_position
+	var to_surface := position_now - center
+	var surface_radius := to_surface.length()
+	if surface_radius < 0.01:
+		return
+	var normal := to_surface / surface_radius
+
+	# Build a walking frame from whatever camera the player is actually
+	# looking through (XRCamera3D in the headset, DesktopCamera otherwise).
+	var view := get_viewport().get_camera_3d()
+	var view_basis := view.global_basis if view != null else global_basis
+	var forward := -view_basis.z
+	var right := view_basis.x
+	# Project onto the tangent plane so movement hugs the surface.
+	forward -= normal * forward.dot(normal)
+	right -= normal * right.dot(normal)
+	if forward.length() < 0.01:
+		# Looking straight down at your feet: fall back to the view's up.
+		forward = view_basis.y - normal * view_basis.y.dot(normal)
+	if forward.length() < 0.01 or right.length() < 0.01:
 		return
 
-	# Keep only the component that goes AROUND the planet; pushing straight
-	# into (or away from) the surface does nothing while landed.
-	var radial := offset / ring_radius
-	var tangent := Vector2(-radial.y, radial.x)
-	var along := input.dot(tangent)
-	if is_zero_approx(along):
+	var move := right.normalized() * input.x + forward.normalized() * input.y
+	if move.length() < 0.001:
 		return
 
-	# Arc length -> angle, so walking speed is constant regardless of the
-	# planet's size.
-	var angle := along * surface_walk_speed * delta / ring_radius
-	var target := planet_xz + offset.rotated(angle)
-	global_position += Vector3(target.x - camera_xz.x, 0.0, target.y - camera_xz.y)
+	var stepped := position_now + move.normalized() * surface_walk_speed * delta
+	var target := center + (stepped - center).normalized() * surface_radius
+	global_position += target - position_now
 
 	if _walk_dust_cooldown <= 0.0:
 		_walk_dust_cooldown = 0.22
@@ -666,24 +711,45 @@ func _spawn_dust(
 	dust.global_position = at - dust.surface_normal * 0.4
 
 
+## Launch back into the plane the planets fly in. You may be standing
+## anywhere on the sphere (including a pole, directly above the plane), so
+## this drops you to the flight altitude AND pushes you out past the
+## planet's cross-section there — otherwise "up" would launch you straight
+## into the rock.
 func take_off() -> void:
 	if state != FlightState.LANDED:
 		return
+	var launch_from := get_spacecraft_world_position()
 	var away := Vector2.RIGHT
 	if _landed_planet != null:
-		var camera_position := get_spacecraft_world_position()
-		var direction := (
-			Vector2(camera_position.x, camera_position.z)
-			- Vector2(_landed_planet.global_position.x, _landed_planet.global_position.z)
-		)
-		if direction.length() > 0.001:
-			away = direction.normalized()
+		var center := _landed_planet.global_position
+		var horizontal := Vector2(launch_from.x - center.x, launch_from.z - center.z)
+		# Standing on a pole gives no horizontal direction; pick one.
+		if horizontal.length() > 0.001:
+			away = horizontal.normalized()
+
+		var diameter: Variant = _landed_planet.get("target_diameter_meters")
+		if diameter != null:
+			var contact := float(diameter) * 0.5 + spacecraft_radius
+			var dy := start_position.z - center.y
+			# Cross-section radius of the planet at the flight altitude.
+			var clear_radius := sqrt(maxf(contact * contact - dy * dy, 0.01)) + 0.75
+			var target := Vector2(center.x, center.z) + away * clear_radius
+			global_position += Vector3(
+				target.x - launch_from.x,
+				start_position.z - launch_from.y,
+				target.y - launch_from.z
+			)
+
 	state = FlightState.FLYING
 	velocity = away * takeoff_speed
 	_takeoff_grace = takeoff_grace_seconds
 	_prediction_elapsed = 0.0
 	_pulse_controllers(0.25, 0.15)
-	print("SpacecraftFlight|INFO: takeoff from %s" % (_landed_planet.name if _landed_planet != null else "?"))
+	_spawn_dust(launch_from, _landed_planet, 30, 3.5, 0.8)
+	print("SpacecraftFlight|INFO: launched from %s back into the flight plane" % (
+		_landed_planet.name if _landed_planet != null else "?"
+	))
 
 
 func _handle_arrival_zone() -> void:
@@ -714,6 +780,54 @@ func _handle_arrival_zone() -> void:
 		_pulse_controllers(0.3, 0.25)
 	else:
 		_set_banner("NO CARGO · SHOOT BEAVERS ON PLANETS", 2.5)
+
+
+## Loud warning when a planet is closing faster than you could survive.
+## Uses time-to-surface rather than raw distance, so a fast approach warns
+## from far away and a slow drift never nags.
+func _update_impact_warning(delta: float) -> void:
+	if _warning_haptic_cooldown > 0.0:
+		_warning_haptic_cooldown -= delta
+	_impact_warning = ""
+	if state != FlightState.FLYING or _obstacles_root == null:
+		return
+	var speed := velocity.length()
+	if speed <= landing_speed_threshold:
+		return  # slow enough to land; nothing to warn about
+
+	var position_now := get_spacecraft_world_position()
+	var soonest := INF
+	var soonest_name := ""
+	for child in _obstacles_root.get_children():
+		var planet := child as Node3D
+		if planet == null:
+			continue
+		var diameter: Variant = planet.get("target_diameter_meters")
+		if diameter == null:
+			continue
+		var to_center := Vector2(
+			planet.global_position.x - position_now.x,
+			planet.global_position.z - position_now.z
+		)
+		var gap := to_center.length() - (float(diameter) * 0.5 + spacecraft_radius)
+		if gap <= 0.0:
+			continue
+		# Only the component of travel aimed AT the planet counts.
+		var closing := velocity.dot(to_center.normalized())
+		if closing <= landing_speed_threshold:
+			continue
+		var seconds_left := gap / closing
+		if seconds_left < soonest:
+			soonest = seconds_left
+			soonest_name = planet.name
+
+	if soonest <= impact_warning_seconds:
+		_impact_warning = ">>> TOO FAST — %s IN %.1fs — BRAKE BELOW %.0f <<<" % [
+			soonest_name, soonest, landing_speed_threshold
+		]
+		if _warning_haptic_cooldown <= 0.0:
+			_warning_haptic_cooldown = 0.35
+			_pulse_controllers(0.5, 0.12)
 
 
 func _set_banner(text: String, seconds: float) -> void:
@@ -871,10 +985,20 @@ func _update_status() -> void:
 			message += _beaver_status_line()
 	if _banner_time_left > 0.0:
 		message += "\n%s" % _banner_text
+	if not _impact_warning.is_empty():
+		message = "%s\n%s" % [_impact_warning, message]
+
+	# Colour is the loud part: the whole readout goes red on a bad approach.
+	var alarm := not _impact_warning.is_empty()
 	if _vr_status != null:
 		_vr_status.text = message
+		_vr_status.modulate = Color(1.0, 0.25, 0.2, 1.0) if alarm else Color(0.7, 0.9, 1.0, 0.9)
 	if _desktop_status != null:
 		_desktop_status.text = message.replace("\n", "  ·  ")
+		_desktop_status.add_theme_color_override(
+			"font_color",
+			Color(1.0, 0.3, 0.25) if alarm else Color(0.86, 0.9, 1.0)
+		)
 
 
 func _beaver_status_line() -> String:
@@ -917,20 +1041,27 @@ func get_predicted_flow_message() -> String:
 
 func get_flight_coordinates() -> Vector3:
 	# Logical (X, Y, altitude Z) maps to Godot world (X, height Y, depth Z).
+	# Altitude is the real height so the HUD tells the truth while you are
+	# standing on top of a planet.
 	var spacecraft_world_position := get_spacecraft_world_position()
-	return Vector3(spacecraft_world_position.x, spacecraft_world_position.z, start_position.z)
+	return Vector3(
+		spacecraft_world_position.x,
+		spacecraft_world_position.z,
+		spacecraft_world_position.y
+	)
 
 
 func get_spacecraft_world_position() -> Vector3:
-	# Use the viewer's horizontal position so the minimap and collision checks
-	# match the first-person view. Altitude remains locked to logical Z=10.
-	if _flight_camera != null:
-		return Vector3(
-			_flight_camera.global_position.x,
-			start_position.z,
-			_flight_camera.global_position.z
-		)
-	return Vector3(global_position.x, start_position.z, global_position.z)
+	# Use the viewer's horizontal position so the minimap and collision
+	# checks match the first-person view.
+	# Altitude is normally locked to logical Z (=10) — the whole game is a
+	# fixed-altitude field. The ONE exception is LANDED: you are standing on
+	# a sphere, so the real height matters for walking, bolt origins and
+	# where a tractored beaver flies to. take_off() restores the lock.
+	var source: Node3D = _flight_camera if _flight_camera != null else self
+	if state == FlightState.LANDED:
+		return source.global_position
+	return Vector3(source.global_position.x, start_position.z, source.global_position.z)
 
 
 func get_view_heading() -> Vector2:

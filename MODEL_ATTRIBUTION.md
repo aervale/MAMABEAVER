@@ -17,6 +17,11 @@ author is credited and changes are indicated as required by CC BY 4.0.
 - Author: [Nestaeric](https://sketchfab.com/Nestaeric)
 - License: [Creative Commons Attribution 4.0 International](https://creativecommons.org/licenses/by/4.0/)
 - Local files: `source/black_hole/source/black hole.fbx` and `source/black_hole/textures/`
+- **Currently unused in `main.tscn`.** The black holes are now drawn
+  procedurally with a screen-space gravitational-lensing shader
+  (`black_hole_lens.gdshader`), because a static mesh cannot bend the
+  starfield behind it. The files and this credit are kept because
+  `black_hole.gd` still supports assigning `model_scene`.
 - Project-side changes: runtime scale normalization, continuous visual rotation, and the source scene's very small embedded `Planet` mesh is hidden. A separate, stationary Moon-model planet is used as the gameplay obstacle so its radius and position match the physics simulation.
 
 The archive was supplied locally as `black-hole.zip`. The imported model and

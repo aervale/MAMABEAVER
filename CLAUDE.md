@@ -33,9 +33,9 @@ and an RK4 flow predictor that publishes a projected path + SAFE/IMPACT/GOAL
 verdict the minimap draws. The beaver layer: `beaver_director.gd` (on the
 root `BeaverExhibit` node) spawns 3 `beaver.gd` critters per planet on the
 latitude ring where each sphere crosses the flight plane; slow planet
-contact = LANDED (snap + refuel), where you can **walk around the planet**
-(stick/WASD moves you along the surface ring — that's how you reach beavers
-that spawned on the far side) and the trigger/right-click fires
+contact = LANDED (snap + refuel), where you can **walk the planet's whole
+sphere** (stick/WASD, mapped through the camera so you move where you look;
+B/Y launches you back into the flight plane clear of the rock) and the trigger/right-click fires
 `magic_bolt.gd` projectiles. Bolts are only *nudged* by gravity
 (`bolt_gravity_scale`, 0.35) so shots go where you aim while still visibly
 curving; at full strength close-range aiming was a lottery. Hit beavers
@@ -79,6 +79,7 @@ altitude (`√(R² − dz²)`).
 | `beaver_director.gd` / `beaver.gd` | Beaver spawning/mission state; one collectible critter. |
 | `magic_bolt.gd` | Gravity-nudged collection projectile (landed-only). |
 | `surface_dust.gd` | Self-freeing one-shot dust puff (landing + footsteps). |
+| `black_hole_lens.gdshader` | Screen-space gravitational lensing shell. |
 | `vr_minimap_presenter.gd` | SubViewport → head-locked quad for VR map. |
 | `desktop_orbit_camera.gd` | No-headset orbit camera. |
 | `starfield_sky.gdshader` | Procedural deep-space sky (stars + nebula band). |
@@ -123,6 +124,14 @@ things silently): `XROrigin3D`, `MoonExhibit`, `BlackHoleExhibit`, `SceneryExhib
 - `SceneryExhibit` holds big background moons far off the flight plane.
   They are **decorative only** — the flight controller and minimap scan just
   `MoonExhibit`/`BlackHoleExhibit` — so never parent a real hazard there.
+- Altitude is locked to `start_position.z` (10) in every state EXCEPT
+  `LANDED`, where `get_spacecraft_world_position()` returns the true height
+  so you can stand anywhere on a planet. Minimap collision circles always
+  use the flight plane, not the walker's height.
+- Black holes are procedural + `black_hole_lens.gdshader`. The shell uses
+  `cull_disabled` plus a `FRONT_FACING`/inside test: with normal back-face
+  culling the lensing silently vanished whenever the camera was inside the
+  shell — which is most of the time it matters.
 - `FlightState.LANDED` is deliberately appended LAST in the enum — the
   minimap colors the ship dot by enum ordinal. Never insert states mid-enum.
 - Beaver model drop-in: put the CC-BY Sketchfab beaver at

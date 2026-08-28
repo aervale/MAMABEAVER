@@ -130,11 +130,14 @@ func _draw_obstacles(map_size: Vector2) -> void:
 		if diameter == null:
 			continue
 		var planet_radius := float(diameter) * 0.5
+		# Always the flight plane, never the walker's live height: these
+		# circles show where you can collide while FLYING.
 		var flight_altitude := 10.0
 		var spacecraft_radius := 0.25
 		if _flight != null:
-			var coordinates := _get_flight_coordinates()
-			flight_altitude = coordinates.z
+			var start: Variant = _flight.get("start_position")
+			if start is Vector3:
+				flight_altitude = start.z
 			var spacecraft_radius_value: Variant = _flight.get("spacecraft_radius")
 			if spacecraft_radius_value != null:
 				spacecraft_radius = float(spacecraft_radius_value)
@@ -168,7 +171,9 @@ func _draw_black_holes(map_size: Vector2) -> void:
 	var flight_altitude := 10.0
 	var spacecraft_radius := 0.25
 	if _flight != null:
-		flight_altitude = _get_flight_coordinates().z
+		var start: Variant = _flight.get("start_position")
+		if start is Vector3:
+			flight_altitude = start.z
 		spacecraft_radius = float(_flight.get("spacecraft_radius"))
 
 	for child in _black_holes.get_children():

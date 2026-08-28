@@ -11,9 +11,17 @@
 #       True inside capture_radius (+ ship radius) => instant "CAPTURED" loss.
 #
 # VISUALS are built entirely in code at _ready() (nothing hand-placed):
-# either the imported Sketchfab model — normalized to visual_diameter_meters,
-# with its tiny embedded "Planet" mesh hidden — or, when no model is assigned,
-# a procedural event horizon + shader accretion disk + photon rings.
+# a procedural event horizon + shader accretion disk + photon rings, or an
+# imported model if one is assigned (normalized to visual_diameter_meters,
+# with its tiny embedded "Planet" mesh hidden).
+#
+# On top of EITHER sits the lensing shell (black_hole_lens.gdshader): a
+# large transparent sphere that re-samples the screen to bend the stars,
+# planets and nebula behind it around the hole. That distortion is the
+# signature of the object and cannot come from a model — a mesh can only
+# carry a painted-on swirl, whereas the shader bends whatever is genuinely
+# behind it this frame. Set enable_lensing = false to drop it (and its one
+# screen-texture read per covered pixel) on weaker hardware.
 # @tool makes this run in the editor so the scene viewport shows it too.
 # NOTE: the visuals are purely decorative; only capture_radius and the field
 # parameters affect gameplay.
@@ -26,6 +34,7 @@ class_name GameplayBlackHole
 ## acceleration = mu / (distance^2 + softening^2).
 
 const DISK_SHADER := preload("res://black_hole_disk.gdshader")
+const LENS_SHADER := preload("res://black_hole_lens.gdshader")
 
 @export_group("Imported model")
 @export var model_scene: PackedScene
@@ -37,6 +46,12 @@ const DISK_SHADER := preload("res://black_hole_disk.gdshader")
 @export_range(0.1, 10.0, 0.1) var gravity_softening_length := 3.0
 @export_range(0.5, 10.0, 0.25) var capture_radius := 3.0
 @export_range(1.0, 100.0, 1.0) var maximum_acceleration := 25.0
+
+@export_group("Gravitational lensing")
+@export var enable_lensing := true
+## Shell size as a multiple of capture_radius; also how far the smear reaches.
+@export_range(2.0, 12.0, 0.5) var lens_falloff_radii := 3.5
+@export_range(0.0, 3.0, 0.05) var lens_strength := 1.0
 
 @export_group("Visuals")
 @export_range(4.0, 20.0, 0.5) var accretion_disk_radius := 9.0
@@ -92,6 +107,9 @@ func _build_visuals() -> void:
 	else:
 		_build_procedural_visual()
 
+	if enable_lensing:
+		_build_lens_shell()
+
 	var glow := OmniLight3D.new()
 	glow.name = "AccretionGlow"
 	glow.light_color = Color(1.0, 0.28, 0.06)
@@ -99,6 +117,32 @@ func _build_visuals() -> void:
 	glow.omni_range = accretion_disk_radius * 1.6
 	glow.shadow_enabled = false
 	_generated_root.add_child(glow)
+
+
+## Transparent sphere carrying the screen-space lens. It is sized to the
+## point where the distortion has faded out, so its own geometry is never
+## visible; it is added OUTSIDE _disk_root so the tilted, rotating disk does
+## not drag the lens around with it.
+func _build_lens_shell() -> void:
+	var material := ShaderMaterial.new()
+	material.shader = LENS_SHADER
+	material.set_shader_parameter("shadow_world_radius", capture_radius)
+	material.set_shader_parameter("shell_world_radius", capture_radius * lens_falloff_radii)
+	material.set_shader_parameter("lens_falloff_radii", lens_falloff_radii)
+	material.set_shader_parameter("lens_strength", lens_strength)
+	# Draw after the accretion disk so the disk is itself lensed.
+	material.render_priority = 4
+
+	var mesh := SphereMesh.new()
+	mesh.radius = capture_radius * lens_falloff_radii
+	mesh.height = mesh.radius * 2.0
+	mesh.radial_segments = 24
+	mesh.rings = 12
+	mesh.material = material
+
+	var shell := _add_mesh("LensShell", mesh, Vector3.ZERO, _generated_root)
+	# Never cull it early: the shell is big and usually straddles the frustum.
+	shell.extra_cull_margin = mesh.radius
 
 
 func _build_imported_visual() -> void:
@@ -160,21 +204,10 @@ func _build_procedural_visual() -> void:
 	horizon_mesh.material = horizon_material
 	_add_mesh("EventHorizon", horizon_mesh, Vector3.ZERO, _generated_root)
 
-	var corona_material := StandardMaterial3D.new()
-	corona_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	corona_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	corona_material.albedo_color = Color(0.5, 0.08, 0.9, 0.11)
-	corona_material.emission_enabled = true
-	corona_material.emission = Color(0.45, 0.05, 1.0)
-	corona_material.emission_energy_multiplier = 2.0
-
-	var corona_mesh := SphereMesh.new()
-	corona_mesh.radius = capture_radius * 1.11
-	corona_mesh.height = capture_radius * 2.22
-	corona_mesh.radial_segments = 24
-	corona_mesh.rings = 12
-	corona_mesh.material = corona_material
-	_add_mesh("PhotonCorona", corona_mesh, Vector3.ZERO, _generated_root)
+	# NOTE: an earlier build wrapped the horizon in a big translucent purple
+	# "corona" sphere. It swamped the disk and the lensing and just read as
+	# a flat purple ball, so the glow now comes from the photon rings and
+	# the lens shell's Einstein ring instead.
 
 	var disk_material := ShaderMaterial.new()
 	disk_material.shader = DISK_SHADER

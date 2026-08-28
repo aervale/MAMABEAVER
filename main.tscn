@@ -16,7 +16,6 @@
 [ext_resource type="Script" uid="uid://bwd3pht53xpdo" path="res://flight_minimap.gd" id="15_minimap"]
 [ext_resource type="Script" uid="uid://c2cvaydavps64" path="res://vr_minimap_presenter.gd" id="16_vr_minimap"]
 [ext_resource type="Script" uid="uid://dxmf1304271gh" path="res://mit_destination.gd" id="17_mit_destination"]
-[ext_resource type="PackedScene" uid="uid://cta0etdpjyry7" path="res://source/black_hole/source/black hole.fbx" id="18_black_hole_model"]
 [ext_resource type="Script" uid="uid://o6gsvrtrx353" path="res://black_hole.gd" id="19_black_hole"]
 [ext_resource type="Shader" path="res://starfield_sky.gdshader" id="20_starsky"]
 [ext_resource type="Script" path="res://ambient_dust.gd" id="21_dust"]
@@ -286,7 +285,6 @@ script = ExtResource("22_beavers")
 [node name="BlackHole03" type="Node3D" parent="BlackHoleExhibit" unique_id=387114975]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 85, 10.5, 55)
 script = ExtResource("19_black_hole")
-model_scene = ExtResource("18_black_hole_model")
 visual_diameter_meters = 11.0
 gravitational_parameter_mu = 916.6667
 gravity_softening_length = 5.5
@@ -298,7 +296,6 @@ disk_roll_degrees = -28.0
 [node name="BlackHole06" type="Node3D" parent="BlackHoleExhibit" unique_id=335265443]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 25, 9.5, 105)
 script = ExtResource("19_black_hole")
-model_scene = ExtResource("18_black_hole_model")
 visual_diameter_meters = 16.0
 gravitational_parameter_mu = 1333.3334
 gravity_softening_length = 8.0
@@ -310,7 +307,6 @@ disk_roll_degrees = -28.0
 [node name="BlackHole09" type="Node3D" parent="BlackHoleExhibit" unique_id=1567358078]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 135, 11, 70)
 script = ExtResource("19_black_hole")
-model_scene = ExtResource("18_black_hole_model")
 visual_diameter_meters = 10.0
 gravitational_parameter_mu = 833.3333
 gravity_softening_length = 5.0
@@ -322,7 +318,6 @@ disk_roll_degrees = -28.0
 [node name="BlackHole12" type="Node3D" parent="BlackHoleExhibit" unique_id=1746772897]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 90, 9, 120)
 script = ExtResource("19_black_hole")
-model_scene = ExtResource("18_black_hole_model")
 visual_diameter_meters = 12.0
 gravitational_parameter_mu = 1000.0
 gravity_softening_length = 6.0
@@ -334,7 +329,6 @@ disk_roll_degrees = -28.0
 [node name="BlackHole15" type="Node3D" parent="BlackHoleExhibit" unique_id=44041510]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 165, 10, 175)
 script = ExtResource("19_black_hole")
-model_scene = ExtResource("18_black_hole_model")
 visual_diameter_meters = 16.0
 gravitational_parameter_mu = 1333.3334
 gravity_softening_length = 8.0
@@ -414,7 +408,7 @@ layout_mode = 2
 tooltip_text = "MIT destination is an original procedural model built for this project"
 theme_override_colors/font_color = Color(0.48, 0.56, 0.7, 1)
 theme_override_font_sizes/font_size = 12
-text = "Moon + black-hole models by Nestaeric · Sketchfab · CC BY 4.0"
+text = "Moon model by Nestaeric · Sketchfab · CC BY 4.0"
 
 [node name="MiniMapPanel" type="PanelContainer" parent="DesktopHUD" unique_id=746492744]
 anchors_preset = 1

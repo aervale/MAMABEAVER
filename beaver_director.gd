@@ -6,10 +6,10 @@
 #
 # At startup it scans MoonExhibit with the project's usual duck-typing
 # (children exposing `target_diameter_meters`) and spawns beavers_per_planet
-# BeaverCritter instances on each planet, standing on the latitude ring where
-# the sphere crosses the flight plane (world Y = flight_altitude) — so every
-# beaver is visible and shootable from a landed ship, even on planets whose
-# centers are offset above/below the plane (offset clamped to 0.85R).
+# BeaverCritter instances spread over the planet's ENTIRE sphere using a
+# Fibonacci (golden-angle) lattice, which spaces them near-evenly instead of
+# clustering the way uniform random angles do. The player can walk the whole
+# surface while landed, so no point is unreachable.
 #
 # MODEL: if res://models/beaver/beaver.glb exists (manual download — see
 # MODEL_ATTRIBUTION.md), the first imported_model_budget beavers use it
@@ -30,12 +30,10 @@ class_name BeaverDirector
 const BeaverScript = preload("res://beaver.gd")
 const MODEL_PATH := "res://models/beaver/beaver.glb"
 
-@export_range(1, 5, 1) var beavers_per_planet := 3
-## World-Y of the flight plane; must match the ship's locked altitude.
-@export var flight_altitude := 10.0
+@export_range(1, 12, 1) var beavers_per_planet := 5
 ## How many beavers may use the imported 17.5k-tri model (Quest budget).
 @export_range(0, 30, 1) var imported_model_budget := 6
-@export var beaver_height_meters := 0.9
+@export var beaver_height_meters := 1.2
 
 var _beavers: Array[BeaverCritter] = []
 var _beavers_by_planet := {}
@@ -61,7 +59,7 @@ func _ready() -> void:
 		if planet == null or planet.get("target_diameter_meters") == null:
 			continue
 		var spawned: Array[BeaverCritter] = []
-		var base_azimuth := randf() * TAU
+		var lattice_spin := randf() * TAU
 		for index in beavers_per_planet:
 			var beaver := BeaverScript.new() as BeaverCritter
 			beaver.name = "Beaver_%s_%d" % [planet.name, index]
@@ -69,7 +67,7 @@ func _ready() -> void:
 			if model != null and imported_budget_left > 0:
 				beaver.model_scene = model
 				imported_budget_left -= 1
-			_place_on_planet(beaver, planet, base_azimuth + TAU * float(index) / float(beavers_per_planet))
+			_place_on_planet(beaver, planet, index, beavers_per_planet, lattice_spin)
 			beaver.collected.connect(_on_beaver_collected)
 			_beavers.append(beaver)
 			spawned.append(beaver)
@@ -80,29 +78,37 @@ func _ready() -> void:
 	])
 
 
-## Position + orient one beaver on the planet's surface at the latitude ring
-## where the sphere crosses the flight plane. All math in the PLANET's local
-## frame (planets don't rotate — only their inner MoonModel spins).
-func _place_on_planet(beaver: BeaverCritter, planet: Node3D, azimuth: float) -> void:
+## Position + orient one beaver anywhere on the planet's sphere. All math in
+## the PLANET's local frame (planets don't rotate — only their inner
+## MoonModel spins).
+func _place_on_planet(
+	beaver: BeaverCritter,
+	planet: Node3D,
+	index: int,
+	count: int,
+	spin: float
+) -> void:
 	var radius := float(planet.get("target_diameter_meters")) * 0.5
-	# Vertical offset from planet center to the flight plane, clamped so the
-	# ring never degenerates at heavily offset planets.
-	var dy := clampf(flight_altitude - planet.global_position.y, -0.85 * radius, 0.85 * radius)
-	var ring_radius := sqrt(maxf(radius * radius - dy * dy, 0.01))
-	var jitter := randf_range(-0.25, 0.25)
-	var local_position := Vector3(
-		cos(azimuth + jitter) * ring_radius,
-		dy,
-		sin(azimuth + jitter) * ring_radius
-	)
 
-	# Basis: local +Y = surface normal, +Z faces outward horizontally (the
-	# beaver mesh is built face-forward on +Z, so it looks out into space).
-	var up := local_position.normalized()
-	var forward := Vector3(up.x, 0.0, up.z)
-	forward = forward.normalized() if forward.length() > 0.01 else Vector3.FORWARD
-	var right := up.cross(forward).normalized()
-	forward = right.cross(up)
+	# Fibonacci sphere: step evenly through heights while advancing the
+	# azimuth by the golden angle. `spin` rotates each planet's lattice so
+	# no two planets get an identical layout.
+	var k := float(index) + 0.5
+	var cos_phi := 1.0 - 2.0 * k / float(count)
+	var sin_phi := sqrt(maxf(1.0 - cos_phi * cos_phi, 0.0))
+	var theta := PI * (1.0 + sqrt(5.0)) * k + spin
+	var up := Vector3(sin_phi * cos(theta), cos_phi, sin_phi * sin(theta))
+	# 0.97: the moon mesh is normalized by its LARGEST dimension, so it is
+	# slightly narrower than `radius` in most directions. Seating beavers a
+	# little into the surface beats having them hover at the limb.
+	var local_position := up * radius * 0.97
+
+	# Basis: local +Y = surface normal; +Z is any consistent tangent (the
+	# beaver mesh is built facing +Z). The reference axis is chosen so it is
+	# never parallel to `up`, which would collapse the cross product.
+	var reference := Vector3.UP if absf(up.y) < 0.9 else Vector3.FORWARD
+	var right := reference.cross(up).normalized()
+	var forward := right.cross(up)
 
 	planet.add_child(beaver)
 	beaver.transform = Transform3D(Basis(right, up, forward), local_position)
