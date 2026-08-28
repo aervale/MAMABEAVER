@@ -75,6 +75,9 @@ func _run_checks(scene: Node) -> void:
 	# --- desktop firing: bolt must leave from the SHIP, not the orbit camera ---
 	var camera := scene.get_node_or_null("DesktopCamera") as Camera3D
 	_check(camera != null and camera.current, "DesktopCamera is active in desktop mode")
+	# The map reads this by duck typing; losing it blanks the expand feature.
+	_check(flight.has_method("is_map_expanded"), "flight exposes is_map_expanded for the tactical map")
+	_check(not bool(flight.call("is_map_expanded")), "map starts compact")
 
 	# --- slow contact = landing + refuel ---
 	# Planet01: center (30, 12.5, 22), diameter 12 -> collision radius 6.25.

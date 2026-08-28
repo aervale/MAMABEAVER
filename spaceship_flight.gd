@@ -93,6 +93,13 @@ const FIRE_BUTTONS: Array[StringName] = [
 	&"trigger_click",
 ]
 
+## The grip/squeeze — a different finger from the trigger, so expanding the
+## map never fights firing. In the action map "grip" is the analog value of
+## /input/squeeze/value; "grip_click" is its digital sibling.
+const MAP_EXPAND_BUTTONS: Array[StringName] = [
+	&"grip_click",
+]
+
 @export_node_path("XRController3D") var left_controller_path: NodePath
 @export_node_path("XRController3D") var right_controller_path: NodePath
 @export_node_path("XRCamera3D") var flight_camera_path: NodePath
@@ -185,6 +192,7 @@ var _banner_time_left := 0.0
 var _walk_dust_cooldown := 0.0
 var _impact_warning := ""
 var _warning_haptic_cooldown := 0.0
+var _map_expanded := false
 var _last_flight_input := Vector2.ZERO
 var _prediction_elapsed := 0.0
 
@@ -224,6 +232,7 @@ func _physics_process(delta: float) -> void:
 	_restart_was_pressed = restart_pressed
 
 	_poll_vr_fire()
+	_poll_map_expand()
 	_update_impact_warning(delta)
 	if _takeoff_grace > 0.0:
 		_takeoff_grace -= delta
@@ -891,6 +900,28 @@ func _poll_vr_fire() -> void:
 				-controller.global_basis.z
 			)
 		_fire_was_pressed[index] = pressed
+
+
+## Squeeze the grip (or hold TAB on desktop) to expand the tactical map.
+## Held, not toggled: you get the big map exactly while you ask for it, and
+## it never gets left open covering the view.
+func _poll_map_expand() -> void:
+	var expanded := Input.is_key_pressed(KEY_TAB)
+	for controller in [_left_controller, _right_controller]:
+		if controller == null:
+			continue
+		for action in MAP_EXPAND_BUTTONS:
+			if controller.is_button_pressed(action):
+				expanded = true
+		if controller.get_float(&"grip") >= 0.55:
+			expanded = true
+	if expanded != _map_expanded:
+		_map_expanded = expanded
+		_pulse_controllers(0.12, 0.05)
+
+
+func is_map_expanded() -> bool:
+	return _map_expanded
 
 
 ## Desktop fire: right-click (left is the orbit-camera drag).

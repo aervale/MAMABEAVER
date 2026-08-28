@@ -75,7 +75,7 @@ altitude (`√(R² − dz²)`).
 | `moon_presenter.gd` | Planet visual + `target_diameter_meters` contract. |
 | `black_hole.gd` | Black-hole physics contract + procedural/imported visuals. |
 | `mit_destination.gd` | Goal landmark: primitives-only MIT dome on an asteroid. Visual only. |
-| `flight_minimap.gd` | Shared 2D map (`_draw()`-based): bodies, flow line, fuel, beaver badges. |
+| `flight_minimap.gd` | Neon HUD tactical map (`_draw()`-based): bodies, flow line, fuel bar, beaver counts, expand-mode info cards. |
 | `beaver_director.gd` / `beaver.gd` | Beaver spawning/mission state; one collectible critter. |
 | `magic_bolt.gd` | Gravity-nudged collection projectile (landed-only). |
 | `surface_dust.gd` | Self-freeing one-shot dust puff (landing + footsteps). |
@@ -124,6 +124,14 @@ things silently): `XROrigin3D`, `MoonExhibit`, `BlackHoleExhibit`, `SceneryExhib
 - `SceneryExhibit` holds big background moons far off the flight plane.
   They are **decorative only** — the flight controller and minimap scan just
   `MoonExhibit`/`BlackHoleExhibit` — so never parent a real hazard there.
+- Map input: the **grip/squeeze** (`grip` analog = `/input/squeeze/value`,
+  or `grip_click`), or TAB on desktop, expands the map while held. It is a
+  different finger from the trigger on purpose, so it never fights firing.
+  `SpacecraftFlightController.is_map_expanded()` is the contract; the VR
+  quad (`vr_minimap_presenter.gd`) and the desktop panel both read it.
+- Map distances are labelled `ly` for flavour but are world metres, and the
+  per-planet fuel figure is a deliberately pessimistic estimate (ignores
+  gravity assists) shown red when you cannot afford it.
 - Altitude is locked to `start_position.z` (10) in every state EXCEPT
   `LANDED`, where `get_spacecraft_world_position()` returns the true height
   so you can stand anywhere on a planet. Minimap collision circles always
