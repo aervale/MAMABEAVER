@@ -50,6 +50,20 @@ func _run_checks(scene: Node) -> void:
 	_check(total == 30, "director spawns 3 beavers on each of 10 planets (got %d)" % total)
 	_check(int(director.call("get_planet_beaver_count", planet)) == 3, "Planet01 hosts 3 beavers")
 
+	# Remember a beaver's real spawn point: reset must restore POSITION, not
+	# just state. (An earlier bug parked every beaver at the planet centre
+	# after a death and this suite passed anyway — hence this check.)
+	var probe: Node3D = director.call("find_beaver_near", planet.global_position, 20.0)
+	var probe_home := probe.global_position if probe != null else Vector3.ZERO
+	_check(
+		probe != null and probe_home.distance_to(planet.global_position) > 1.0,
+		"beavers spawn on the surface, not inside the planet"
+	)
+
+	# --- desktop firing: bolt must leave from the SHIP, not the orbit camera ---
+	var camera := scene.get_node_or_null("DesktopCamera") as Camera3D
+	_check(camera != null and camera.current, "DesktopCamera is active in desktop mode")
+
 	# --- slow contact = landing + refuel ---
 	# Planet01: center (30, 12.5, 22), diameter 12 -> collision radius 6.25.
 	# Park the camera 5.7 m out in XZ: 3D distance sqrt(5.7^2+2.5^2)=6.22 < 6.25.
@@ -68,6 +82,19 @@ func _run_checks(scene: Node) -> void:
 	# --- firing is landed-only, capped, and spawns MagicBolt nodes ---
 	flight.call("_try_fire", flight.call("get_spacecraft_world_position"), Vector3(1, 0, 0))
 	_check(_count_bolts(scene) == 1, "trigger fires exactly one bolt while landed")
+
+	# Simulate a real desktop right-click through _unhandled_input.
+	var click := InputEventMouseButton.new()
+	click.button_index = MOUSE_BUTTON_RIGHT
+	click.pressed = true
+	click.position = Vector2(root.size) * 0.5
+	flight.call("_unhandled_input", click)
+	var ship_now: Vector3 = flight.call("get_spacecraft_world_position")
+	var spawned_near_ship := true
+	for child in scene.get_children():
+		if child is MagicBolt:
+			spawned_near_ship = spawned_near_ship and (child as Node3D).global_position.distance_to(ship_now) < 3.0
+	_check(spawned_near_ship, "right-click bolts spawn at the ship, not at the orbit camera")
 
 	# --- takeoff + grace ---
 	flight.call("take_off")
@@ -114,6 +141,11 @@ func _run_checks(scene: Node) -> void:
 	_check(int(director.call("get_delivered_count")) == 0, "reset clears delivered")
 	_check(int(director.call("get_total_count")) == 30, "reset keeps all beavers")
 	_check(int(director.call("get_planet_beaver_count", planet)) == 3, "reset returns beavers to their planets")
+	if probe != null:
+		_check(
+			probe.global_position.distance_to(probe_home) < 0.01,
+			"reset restores each beaver's surface position (was: teleported into the planet core)"
+		)
 	_check(_count_bolts(scene) == 0, "reset clears live bolts")
 
 	_finish()

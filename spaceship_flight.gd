@@ -702,21 +702,42 @@ func _poll_vr_fire() -> void:
 		_fire_was_pressed[index] = pressed
 
 
-## Desktop fire: right-click (left is the orbit-camera drag). Ray through
-## the mouse from whatever camera is current.
+## Desktop fire: right-click (left is the orbit-camera drag).
+## The desktop camera orbits tens of metres from the ship, so firing FROM
+## the camera would spawn the bolt way out in space (and it would expire
+## before arriving). Instead: intersect the mouse ray with the flight plane
+## and shoot from the SHIP toward that point — right-click where you want
+## the bolt to go.
 func _unhandled_input(event: InputEvent) -> void:
-	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_RIGHT and event.pressed:
-		var camera := get_viewport().get_camera_3d()
-		if camera != null:
-			_try_fire(
-				camera.project_ray_origin(event.position),
-				camera.project_ray_normal(event.position)
-			)
+	if not (event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_RIGHT and event.pressed):
+		return
+	var camera := get_viewport().get_camera_3d()
+	if camera == null:
+		return
+	var ray_origin := camera.project_ray_origin(event.position)
+	var ray_normal := camera.project_ray_normal(event.position)
+	if absf(ray_normal.y) < 0.0001:
+		return  # looking along the plane; no aim point
+	var distance_to_plane := (start_position.z - ray_origin.y) / ray_normal.y
+	if distance_to_plane <= 0.0:
+		return  # clicked the sky, above the horizon
+	var aim_point := ray_origin + ray_normal * distance_to_plane
+
+	var ship := get_spacecraft_world_position()
+	var direction := aim_point - ship
+	direction.y = 0.0
+	if direction.length() < 0.01:
+		return
+	direction = direction.normalized()
+	_try_fire(ship + direction * 0.6, direction)
 
 
 func _try_fire(origin: Vector3, direction: Vector3) -> void:
 	# Bolts are a landed-only tool: collection happens ON planets, per spec.
 	if state != FlightState.LANDED:
+		# Silent failure reads as a broken button; say why.
+		if state == FlightState.FLYING:
+			_set_banner("LAND ON A PLANET TO FIRE", 1.5)
 		return
 	_live_bolts = _live_bolts.filter(func(bolt): return is_instance_valid(bolt))
 	if _live_bolts.size() >= max_live_bolts:

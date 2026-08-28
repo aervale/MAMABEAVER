@@ -9,6 +9,9 @@ extends Camera3D
 class_name DesktopOrbitCamera
 
 ## Simple no-headset preview camera. Drag to orbit, scroll to zoom.
+## It orbits target_path every frame, so pointing it at the XR rig makes it
+## FOLLOW the ship — needed to see beavers on a planet surface. Zoom out
+## (wheel) for the old field-overview framing; the minimap covers navigation.
 
 @export_node_path("Node3D") var target_path: NodePath
 @export_range(1.2, 400.0, 0.1) var distance := 4.0
@@ -40,7 +43,8 @@ func _process(delta: float) -> void:
 	if not is_zero_approx(horizontal) or not is_zero_approx(vertical):
 		_yaw -= horizontal * keyboard_speed * delta
 		_pitch = clampf(_pitch + vertical * keyboard_speed * delta, -1.35, 1.35)
-		_update_camera()
+	# Re-solve every frame: a moving target (the ship) must stay framed.
+	_update_camera()
 
 
 func _input(event: InputEvent) -> void:

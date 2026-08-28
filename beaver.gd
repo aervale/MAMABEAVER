@@ -51,10 +51,21 @@ var _bob_phase := 0.0
 
 
 func _ready() -> void:
-	_home_parent = get_parent() as Node3D
-	_home_transform = transform
+	mark_home()
 	_bob_phase = randf() * TAU
 	_build_visual()
+
+
+## Records the current parent + local transform as the spawn point that
+## reset_to_spawn() restores.
+## FOOTGUN: add_child() runs _ready() immediately, so at that moment the
+## director has NOT applied the placement transform yet. The director calls
+## this again right after placing the beaver — without that second call
+## every reset would teleport all beavers to their planet's centre (i.e.
+## inside the moon, where they look like they vanished).
+func mark_home() -> void:
+	_home_parent = get_parent() as Node3D
+	_home_transform = transform
 
 
 func _process(delta: float) -> void:

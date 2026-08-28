@@ -106,6 +106,9 @@ func _place_on_planet(beaver: BeaverCritter, planet: Node3D, azimuth: float) -> 
 
 	planet.add_child(beaver)
 	beaver.transform = Transform3D(Basis(right, up, forward), local_position)
+	# Must run AFTER the transform above: add_child() already fired the
+	# beaver's _ready(), which recorded an identity spawn point.
+	beaver.mark_home()
 
 
 func _on_beaver_collected(_beaver: Node3D) -> void:
