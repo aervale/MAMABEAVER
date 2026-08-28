@@ -191,11 +191,72 @@ func _run_checks(scene: Node) -> void:
 		not bool(desktop_guide.call("is_showing")) and not bool(vr_guide.call("is_showing")),
 		"controls guide hides after the run starts"
 	)
+
+	# A realistic low-frame-rate grazing step can have both endpoints outside
+	# the contact shell while the movement segment crosses it. It must land,
+	# and exactly the advertised threshold speed is still safe.
+	var physical_contact := (
+		float(planet.get("target_diameter_meters")) * 0.5
+		+ float(flight.get("spacecraft_radius"))
+	)
+	var assisted_contact := physical_contact + float(flight.get("landing_assist_margin"))
+	var flight_plane_y := float(flight.get("start_position").z)
+	var plane_offset := flight_plane_y - planet.global_position.y
+	var assisted_ring := sqrt(assisted_contact * assisted_contact - plane_offset * plane_offset)
+	var grazing_start := Vector3(
+		planet.global_position.x - 0.08,
+		flight_plane_y,
+		planet.global_position.z + assisted_ring - 0.0001
+	)
+	var grazing_end := Vector3(
+		planet.global_position.x + 0.08,
+		flight_plane_y,
+		planet.global_position.z + assisted_ring - 0.0001
+	)
+	_check(
+		grazing_start.distance_to(planet.global_position) > assisted_contact
+		and grazing_end.distance_to(planet.global_position) > assisted_contact,
+		"grazing regression starts with both frame endpoints outside contact"
+	)
+	(flight as Node3D).global_position = grazing_end
+	flight.set("velocity", Vector2(float(flight.get("landing_speed_threshold")), 0.0))
+	flight.call("_check_obstacle_collisions", grazing_start)
+	_check(
+		int(flight.get("state")) == STATE_LANDED,
+		"swept contact lands at exactly the safe-speed threshold"
+	)
+	flight.call("reset_flight")
+	flight.call("start_flight")
+
+	# A stationary point in the small assist-only shell should settle onto the
+	# planet instead of requiring pixel-perfect physical overlap.
+	var physical_ring := sqrt(physical_contact * physical_contact - plane_offset * plane_offset)
+	var assist_probe := Vector3(
+		planet.global_position.x,
+		flight_plane_y,
+		planet.global_position.z + physical_ring + float(flight.get("landing_assist_margin")) * 0.35
+	)
+	(flight as Node3D).global_position = assist_probe
+	flight.set("velocity", Vector2.ZERO)
+	flight.call("_check_obstacle_collisions", assist_probe)
+	_check(int(flight.get("state")) == STATE_LANDED, "low-speed landing assist accepts a near contact")
+	flight.call("reset_flight")
+	flight.call("start_flight")
+
 	flight.set("fuel", 10.0)
 	_teleport(flight, planet.global_position + Vector3(-5.7, 0.0, 0.0), Vector2(1.0, 0.0))
 	await physics_frame
 	await physics_frame
 	_check(int(flight.get("state")) == STATE_LANDED, "slow planet contact lands (state=%d)" % int(flight.get("state")))
+	var touchdown_target: Vector3 = flight.get("_landing_to")
+	var touchdown_direction := (touchdown_target - planet.global_position).normalized()
+	var expected_touchdown_radius := float(
+		flight.call("_stand_radius", planet, touchdown_direction)
+	)
+	_check(
+		absf(touchdown_target.distance_to(planet.global_position) - expected_touchdown_radius) < 0.05,
+		"touchdown target uses the real moon surface instead of its oversized collision shell"
+	)
 	_check(
 		is_equal_approx(float(flight.get("fuel")), float(flight.get("maximum_fuel"))),
 		"landing refuels the tank"
@@ -230,10 +291,28 @@ func _run_checks(scene: Node) -> void:
 		int(game_sfx.call("get_play_count", &"trigger_shot")) == shot_sounds_before + 1,
 		"a successful trigger shot plays its firing sound"
 	)
+	# Quest can deliver trigger_click as an event between physics frames. The
+	# event fallback must fire once, then the analogue poll must not duplicate it.
+	var bolts_before_event := _count_bolts(scene)
+	flight.set("_fire_was_pressed", [false, false])
+	flight.call("_on_controller_button_pressed", &"trigger_click", right_controller)
+	var bolts_after_event := _count_bolts(scene)
+	_check(
+		bolts_after_event == bolts_before_event + 1,
+		"trigger_click event fallback fires when analogue polling misses an edge"
+	)
+	flight.call("_poll_vr_fire")
+	_check(
+		_count_bolts(scene) == bolts_after_event,
+		"trigger event and analogue polling cannot double-fire one pull"
+	)
 	# Straight down into the rock is the one aim that gets refused.
 	var into := (planet.global_position - muzzle).normalized()
 	flight.call("_try_fire", muzzle, into)
-	_check(_count_bolts(scene) == 1, "aiming into the surface is refused, not absorbed")
+	_check(
+		_count_bolts(scene) == bolts_after_event,
+		"aiming into the surface is refused, not absorbed"
+	)
 
 	# Simulate a real desktop right-click through _unhandled_input.
 	var click := InputEventMouseButton.new()

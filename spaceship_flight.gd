@@ -138,6 +138,10 @@ const MAP_EXPAND_BUTTONS: Array[StringName] = [
 @export_group("Landing & beavers")
 ## Touch a planet below this speed to land instead of crash.
 @export_range(0.5, 15.0, 0.5) var landing_speed_threshold := 8.0
+## Forgiving shell outside the physical collision radius, used only when the
+## current speed is safe to land. It turns visually convincing near-contacts
+## into a touchdown without making high-speed planet collisions larger.
+@export_range(0.0, 2.0, 0.05) var landing_assist_margin := 0.45
 @export_range(1.0, 15.0, 0.5) var takeoff_speed := 5.0
 ## Extra horizontal distance beyond the planet collision cross-section.
 ## A generous gap prevents strong gravity from pulling the ship straight
@@ -275,8 +279,13 @@ func _ready() -> void:
 	):
 		_beaver_director.connect(&"beaver_caught", _on_beaver_caught)
 	for controller in [_left_controller, _right_controller]:
-		if controller != null and not controller.button_pressed.is_connected(_on_controller_button_pressed):
-			controller.button_pressed.connect(_on_controller_button_pressed)
+		if controller == null:
+			continue
+		# Keep the emitting controller in the callback. Trigger presses need its
+		# calibrated aim pose, while B/Y and A/X only need the action name.
+		var button_callback := _on_controller_button_pressed.bind(controller)
+		if not controller.button_pressed.is_connected(button_callback):
+			controller.button_pressed.connect(button_callback)
 	reset_flight()
 	_prewarm_first_bolt()
 
@@ -345,6 +354,7 @@ func _physics_process(delta: float) -> void:
 		_banner_time_left -= delta
 
 	if state == FlightState.FLYING:
+		var movement_start := get_spacecraft_world_position()
 		var flight_input := _get_flight_input()
 		if flight_input.length_squared() > 1.0:
 			flight_input = flight_input.normalized()
@@ -359,7 +369,7 @@ func _physics_process(delta: float) -> void:
 			velocity = velocity.normalized() * flight_speed
 		_move_spacecraft(delta)
 
-		_check_obstacle_collisions()
+		_check_obstacle_collisions(movement_start)
 		if state == FlightState.FLYING:
 			var at_destination := get_spacecraft_world_position().distance_to(_logical_to_world(destination)) <= arrival_radius
 			if at_destination:
@@ -691,8 +701,9 @@ func _get_collision_message_at(world_position: Vector3) -> String:
 	return ""
 
 
-func _check_obstacle_collisions() -> void:
+func _check_obstacle_collisions(previous_world_position: Vector3) -> void:
 	var spacecraft_world_position := get_spacecraft_world_position()
+	var impact_speed := velocity.length()
 
 	# Planets: approach speed decides landing vs crash.
 	if _obstacles_root != null:
@@ -707,9 +718,22 @@ func _check_obstacle_collisions() -> void:
 			if diameter == null:
 				continue
 			var collision_distance := float(diameter) * 0.5 + spacecraft_radius
-			if spacecraft_world_position.distance_to(obstacle.global_position) <= collision_distance:
-				if velocity.length() < landing_speed_threshold:
-					_land_on(obstacle, collision_distance, velocity.length())
+			var can_land := impact_speed <= landing_speed_threshold
+			var detection_distance := collision_distance + (landing_assist_margin if can_land else 0.0)
+			# Continuous segment-vs-sphere contact catches grazing approaches where
+			# both frame endpoints lie outside the sphere. Endpoint-only checks made
+			# those touchdowns depend on frame rate and exact contact angle.
+			var hit_fraction := _segment_sphere_hit_fraction(
+				previous_world_position,
+				spacecraft_world_position,
+				obstacle.global_position,
+				detection_distance
+			)
+			if hit_fraction >= 0.0:
+				var contact := previous_world_position.lerp(spacecraft_world_position, hit_fraction)
+				global_position = Vector3(contact.x, start_position.z, contact.z)
+				if can_land:
+					_land_on(obstacle, collision_distance, impact_speed)
 				else:
 					_crash("COLLISION · %s" % obstacle.name, 0.35)
 				return
@@ -725,6 +749,31 @@ func _check_obstacle_collisions() -> void:
 				return
 
 
+## First intersection of a movement segment with a sphere, expressed in
+## [0, 1]. Returns -1 when there is no hit. Starting inside counts as t=0.
+func _segment_sphere_hit_fraction(
+	from: Vector3,
+	to: Vector3,
+	center: Vector3,
+	radius: float
+) -> float:
+	var offset := from - center
+	var radius_squared := radius * radius
+	if offset.length_squared() <= radius_squared:
+		return 0.0
+	var motion := to - from
+	var a := motion.length_squared()
+	if a <= 0.0000001:
+		return -1.0
+	var b := 2.0 * offset.dot(motion)
+	var c := offset.length_squared() - radius_squared
+	var discriminant := b * b - 4.0 * a * c
+	if discriminant < 0.0:
+		return -1.0
+	var first_hit := (-b - sqrt(discriminant)) / (2.0 * a)
+	return first_hit if first_hit >= 0.0 and first_hit <= 1.0 else -1.0
+
+
 func _crash(message: String, haptic_duration: float) -> void:
 	state = FlightState.CRASHED
 	crash_message = message
@@ -733,7 +782,7 @@ func _crash(message: String, haptic_duration: float) -> void:
 	print("SpacecraftFlight|INFO: %s" % message)
 
 
-func _land_on(planet: Node3D, collision_distance: float, impact_speed: float) -> void:
+func _land_on(planet: Node3D, _collision_distance: float, impact_speed: float) -> void:
 	state = FlightState.LANDED
 	_landed_planet = planet
 	_surface_walk_forward = Vector3.ZERO
@@ -741,28 +790,19 @@ func _land_on(planet: Node3D, collision_distance: float, impact_speed: float) ->
 	velocity = Vector2.ZERO
 	fuel = maximum_fuel
 
-	# Snap the rig so the CAMERA's XZ sits just outside the planet's contact
-	# circle at the flight plane: radius = sqrt((R+r)^2 - dy^2), guaranteed
-	# real because a contact just happened. Move the rig by the camera's
-	# delta so room-scale offset is respected.
-	var camera_position := get_spacecraft_world_position()
-	var camera_xz := Vector2(camera_position.x, camera_position.z)
-	var planet_xz := Vector2(planet.global_position.x, planet.global_position.z)
-	var dy := start_position.z - planet.global_position.y
-	var ring_radius := sqrt(maxf(collision_distance * collision_distance - dy * dy, 0.01)) + 0.05
-	var away := camera_xz - planet_xz
-	away = away.normalized() if away.length() > 0.001 else Vector2.RIGHT
-	var target_xz := planet_xz + away * ring_radius
+	# Collision uses a conservative bounding sphere, but the imported moon is
+	# lumpy and can sit metres inside that sphere along its narrow directions.
+	# Landing on the collision shell therefore left the player visibly hovering
+	# until the first walking input re-sampled the mesh. Use the impact direction
+	# to settle onto the same real-surface target used by surface walking.
+	var position_now := get_spacecraft_world_position()
+	var landing_target := _surface_target(planet, position_now)
 
 	# Glide in over landing_animation_seconds rather than teleporting.
 	# _physics_process advances this; snapping was the disorienting part of
 	# a touchdown, so the rig now travels the last stretch under animation.
 	_landing_from = global_position
-	_landing_to = global_position + Vector3(
-		target_xz.x - camera_xz.x,
-		0.0,
-		target_xz.y - camera_xz.y
-	)
+	_landing_to = global_position + landing_target - position_now
 	_landing_elapsed = 0.0
 	if landing_animation_seconds <= 0.0:
 		global_position = _landing_to
@@ -796,6 +836,10 @@ func _walk_on_surface(delta: float, input: Vector2) -> void:
 	if _landed_planet == null:
 		return
 
+	# Correct the height even with the stick centred. This makes touchdown
+	# deterministic and also repairs any small tracking/animation discrepancy
+	# instead of waiting for the player's first walking step.
+	_snap_to_landed_surface()
 	var position_now := get_spacecraft_world_position()
 	var center := _landed_planet.global_position
 	var to_surface := position_now - center
@@ -869,6 +913,7 @@ func _advance_landing(delta: float) -> void:
 			_align_rig_up(normal.normalized(), delta * 2.0)
 
 	if progress >= 1.0:
+		_snap_to_landed_surface()
 		_landing_elapsed = -1.0
 
 
@@ -928,6 +973,24 @@ func _stand_radius(planet: Node3D, direction: Vector3) -> float:
 			_beaver_director.call("get_surface_radius", planet, direction, fallback)
 		) + surface_stand_height
 	return fallback
+
+
+## Point at which the XR rig origin should stand on the imported mesh. The
+## direction comes from the collision/previous position; the radius comes
+## from sampled model geometry rather than the conservative collision shell.
+func _surface_target(planet: Node3D, around: Vector3) -> Vector3:
+	var direction := around - planet.global_position
+	if direction.length_squared() < 0.0001:
+		direction = Vector3.RIGHT
+	direction = direction.normalized()
+	return planet.global_position + direction * _stand_radius(planet, direction)
+
+
+func _snap_to_landed_surface() -> void:
+	if _landed_planet == null:
+		return
+	var position_now := get_spacecraft_world_position()
+	global_position += _surface_target(_landed_planet, position_now) - position_now
 
 
 ## Rotate the whole rig so its up-axis leans toward `target_up`. Walking
@@ -1275,8 +1338,16 @@ func _is_start_pressed() -> bool:
 	return false
 
 
-func _on_controller_button_pressed(action: StringName) -> void:
-	if action in START_BUTTONS and state == FlightState.WAITING:
+func _on_controller_button_pressed(
+	action: StringName,
+	controller: XRController3D = null
+) -> void:
+	# Quest normally exposes both an analogue trigger value and a synthesized
+	# trigger_click action. Polling the value gives early engagement, while this
+	# event path prevents a short press between physics frames from disappearing.
+	if action in FIRE_BUTTONS:
+		_fire_from_controller(controller)
+	elif action in START_BUTTONS and state == FlightState.WAITING:
 		start_flight()
 	elif action in START_BUTTONS and state == FlightState.LANDED:
 		take_off()
@@ -1310,13 +1381,31 @@ func _poll_vr_fire() -> void:
 		for action in FIRE_BUTTONS:
 			pressed = pressed or controller.is_button_pressed(action)
 		if pressed and not _fire_was_pressed[index]:
-			# The controller nodes use OpenXR's calibrated aim pose, so -Z is
-			# the actual pointing ray instead of the palm-oriented grip axis.
-			_try_fire(
-				controller.global_position - controller.global_basis.z * 0.2,
-				-controller.global_basis.z
-			)
+			_fire_from_controller(controller)
 		_fire_was_pressed[index] = pressed
+
+
+## Fire one edge from the controller's calibrated OpenXR aim pose. Both the
+## analogue polling path and button_pressed signal feed this helper; the shared
+## latch guarantees that receiving both representations creates only one bolt.
+func _fire_from_controller(controller: XRController3D) -> void:
+	if controller == null:
+		return
+	var controller_index := -1
+	if controller == _left_controller:
+		controller_index = 0
+	elif controller == _right_controller:
+		controller_index = 1
+	if controller_index >= 0 and _fire_was_pressed[controller_index]:
+		return
+	if controller_index >= 0:
+		_fire_was_pressed[controller_index] = true
+	# The controller nodes use OpenXR's calibrated aim pose, so -Z is the
+	# actual pointing ray instead of the palm-oriented grip axis.
+	_try_fire(
+		controller.global_position - controller.global_basis.z * 0.2,
+		-controller.global_basis.z
+	)
 
 
 ## Squeeze the grip (or hold TAB on desktop) to expand the tactical map.
