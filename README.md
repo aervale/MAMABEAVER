@@ -18,6 +18,7 @@ gravity fields and collision volumes of ten planets and five black holes.
 - The logical flight boundary is `X/Y=-20..220` and is enforced in code.
 - The upper-right minimap is shared by desktop and in-headset displays.
 - Land on planets and shoot Beaver targets; delivering 20 to MIT wins.
+- Victory opens a shared desktop/XR results screen with Beaver points, remaining-fuel bonus, mission rank, and total score.
 - Original procedural cues play for firing, Beaver capture, MIT deposit, and victory.
 
 At startup and after a reset, the spacecraft is stationary, gravity is not

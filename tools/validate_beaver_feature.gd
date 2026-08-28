@@ -45,6 +45,10 @@ func _run_checks(scene: Node) -> void:
 	var ship_visual := scene.get_node_or_null("XROrigin3D/Spacecraft") as Node3D
 	var left_controller := scene.get_node_or_null("XROrigin3D/XRControllerLeft") as XRController3D
 	var right_controller := scene.get_node_or_null("XROrigin3D/XRControllerRight") as XRController3D
+	var desktop_results := scene.get_node_or_null("DesktopHUD/MissionResults")
+	var vr_results := scene.get_node_or_null(
+		"XROrigin3D/XRCamera3D/FlightHUD/ResultsViewport/MissionResults"
+	)
 	_check(flight != null, "XROrigin3D must exist")
 	_check(director != null, "BeaverExhibit must exist")
 	_check(
@@ -63,13 +67,30 @@ func _run_checks(scene: Node) -> void:
 	)
 	_check(ship_visual != null, "visible spacecraft must exist")
 	_check(
+		desktop_results != null and vr_results != null
+		and desktop_results.has_method("is_showing")
+		and String(desktop_results.call("get_title")) == "VICTORY!",
+		"desktop and XR settlement screens share the VICTORY presentation"
+	)
+	_check(
 		comfort_vignette != null and comfort_vignette.has_method("get_strength"),
 		"head-locked dynamic comfort vignette exists"
 	)
 	_check(
 		is_instance_valid(flight.get("_prewarmed_bolt"))
-		and not (flight.get("_prewarmed_bolt") as Node3D).visible,
-		"first magic bolt is prewarmed invisibly during loading"
+		and (flight.get("_prewarmed_bolt") as Node3D).visible
+		and (flight.get("_prewarmed_bolt") as Node3D).scale.x < 0.001,
+		"first magic bolt enters the render queue at sub-pixel scale during loading"
+	)
+	# Hidden instances do not compile render pipelines. Let the startup copy be
+	# drawn for its configured eight frames, then verify it becomes dormant.
+	for frame in 10:
+		await process_frame
+	_check(
+		is_instance_valid(flight.get("_prewarmed_bolt"))
+		and not (flight.get("_prewarmed_bolt") as Node3D).visible
+		and bool(flight.get("_bolt_render_prewarm_complete")),
+		"first-shot opaque, transparent and particle pipelines finish prewarming"
 	)
 	_check(
 		left_controller != null and right_controller != null
@@ -303,6 +324,35 @@ func _run_checks(scene: Node) -> void:
 			view_heading_before_takeoff.dot(view_heading_after_takeoff) > 0.9999,
 			"takeoff preserves the headset's world-facing direction"
 		)
+		# Repeat the hard part with several unrelated surface normals and tracked
+		# head rotations. This catches the accumulated yaw reversal that only
+		# appeared after visiting multiple planets in the headset.
+		var cycle_normals := [
+			Vector3(0.72, 0.42, -0.55).normalized(),
+			Vector3(-0.61, -0.24, 0.75).normalized(),
+			Vector3(0.18, -0.91, -0.37).normalized(),
+		]
+		var cycle_rotations := [
+			Vector3(deg_to_rad(14.0), deg_to_rad(-82.0), deg_to_rad(8.0)),
+			Vector3(deg_to_rad(-21.0), deg_to_rad(137.0), deg_to_rad(-11.0)),
+			Vector3(deg_to_rad(9.0), deg_to_rad(38.0), deg_to_rad(16.0)),
+		]
+		var all_cycles_preserved := true
+		for cycle in cycle_normals.size():
+			flight.call("_align_rig_up", cycle_normals[cycle], 1.0)
+			xr_camera.rotation = cycle_rotations[cycle]
+			var heading_before: Vector2 = flight.call("get_view_heading")
+			(flight as Node3D).global_basis = flight.call("_get_level_basis", heading_before)
+			flight.call("_correct_view_heading", heading_before)
+			var heading_after: Vector2 = flight.call("get_view_heading")
+			all_cycles_preserved = (
+				all_cycles_preserved
+				and heading_before.dot(heading_after) > 0.9999
+				and (flight as Node3D).global_basis.y.dot(Vector3.UP) > 0.999
+			)
+		_check(all_cycles_preserved, "view heading remains stable after repeated landing cycles")
+		xr_camera.rotation = Vector3.ZERO
+		flight.call("_level_rig")
 	var launched: Vector3 = flight.call("get_spacecraft_world_position")
 	_check(absf(launched.y - 10.0) < 0.01, "takeoff returns to the flight plane (y=%.2f)" % launched.y)
 	var clearance := Vector2(launched.x, launched.z).distance_to(
@@ -410,6 +460,17 @@ func _run_checks(scene: Node) -> void:
 	var victory_sounds_before := int(game_sfx.call("get_play_count", &"victory"))
 	flight.call("_handle_arrival_zone")
 	_check(int(flight.get("state")) == STATE_ARRIVED, "delivery 20 completes the mission")
+	await process_frame
+	_check(
+		bool(desktop_results.call("is_showing")) and bool(vr_results.call("is_showing")),
+		"VICTORY settlement screen appears in both desktop and XR presenters"
+	)
+	_check(
+		int(flight.call("get_beaver_score")) == required * 1000
+		and int(flight.call("get_mission_score"))
+			== int(flight.call("get_beaver_score")) + int(flight.call("get_fuel_score")),
+		"settlement score combines delivered beavers and remaining fuel"
+	)
 	_check(
 		int(game_sfx.call("get_play_count", &"mit_deposit")) == final_deposit_before + 1,
 		"final MIT delivery still plays its cargo-release sound"
@@ -422,6 +483,8 @@ func _run_checks(scene: Node) -> void:
 
 	# --- reset restores everything ---
 	flight.call("reset_flight")
+	await process_frame
+	_check(not bool(desktop_results.call("is_showing")), "reset closes the VICTORY settlement screen")
 	_check(int(director.call("get_delivered_count")) == 0, "reset clears delivered")
 	_check(int(director.call("get_total_count")) == total, "reset keeps all beavers")
 	_check(int(director.call("get_planet_beaver_count", planet)) == per_planet, "reset returns beavers to their planets")
