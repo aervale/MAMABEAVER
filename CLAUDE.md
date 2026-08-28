@@ -150,8 +150,9 @@ things silently): `XROrigin3D`, `MoonExhibit`, `BlackHoleExhibit`, `SceneryExhib
   assist never enlarges high-speed crash collisions. After contact, the
   landing target is sampled from the imported moon mesh (the collision sphere
   is deliberately conservative), and idle landed frames keep that height.
-  `surface_stand_height` is only an 8 cm floor clearance: OpenXR camera
-  tracking already supplies the real eye height, so never add it twice.
+  `surface_stand_height` is the desired camera clearance (0.55 m), not an
+  origin offset. XR placement compensates the tracked camera pose, and
+  `_align_rig_up` pivots around that camera so tilt cannot raise the view.
 - Quest trigger input has two paths—analogue polling and `trigger_click`
   events—sharing `_fire_was_pressed`, so short pulls are neither lost nor
   emitted twice.

@@ -144,6 +144,23 @@ func _run_checks(scene: Node) -> void:
 		# Desktop/headless keeps the external craft at the authoritative origin.
 		ship_visual.global_position = (flight as Node3D).global_position
 
+		# Simulate XR placement despite the headless viewport: translating the
+		# rig must put the tracked camera—not merely XROrigin—at the target.
+		var saved_xr_transform := (flight as Node3D).global_transform
+		var camera_target := xr_camera.global_position + Vector3(0.4, -0.7, 0.2)
+		flight.call("_place_landed_view_at", camera_target, true)
+		_check(
+			xr_camera.global_position.distance_to(camera_target) < 0.001,
+			"XR surface placement compensates the tracked camera offset"
+		)
+		var camera_before_tilt := xr_camera.global_position
+		flight.call("_align_rig_up", Vector3(0.6, 0.7, -0.3).normalized(), 1.0, true)
+		_check(
+			xr_camera.global_position.distance_to(camera_before_tilt) < 0.001,
+			"XR surface alignment pivots about the camera without lifting the view"
+		)
+		(flight as Node3D).global_transform = saved_xr_transform
+
 	# --- spawning ---
 	var total := int(director.call("get_total_count"))
 	var per_planet := int(director.get("beavers_per_planet"))
@@ -266,13 +283,14 @@ func _run_checks(scene: Node) -> void:
 		"touchdown target uses the real moon surface instead of its oversized collision shell"
 	)
 	_check(
-		float(flight.get("surface_stand_height")) <= 0.15
+		float(flight.get("surface_stand_height")) >= 0.4
+		and float(flight.get("surface_stand_height")) <= 0.8
 		and absf(
 			expected_touchdown_radius
 			- sampled_surface_radius
 			- float(flight.get("surface_stand_height"))
 		) < 0.02,
-		"XR floor origin gets only a small surface clearance; tracked camera supplies eye height"
+		"landed viewpoint uses the configured low camera height above the sampled surface"
 	)
 	_check(
 		is_equal_approx(float(flight.get("fuel")), float(flight.get("maximum_fuel"))),

@@ -167,11 +167,11 @@ const MAP_EXPAND_BUTTONS: Array[StringName] = [
 ## How long the touchdown glide takes. Snapping straight onto the surface
 ## was the disorienting part of landing, so the ship now eases in.
 @export_range(0.0, 4.0, 0.1) var landing_animation_seconds := 1.4
-## Small clearance between the XR tracking origin (the player's FLOOR) and
-## the sampled rock surface. Do not put eye height here: OpenXR already gives
-## XRCamera3D the player's real tracked head height. Adding 1.2 m here used to
-## double-count that height and left the view floating above the Beavers.
-@export_range(0.0, 1.0, 0.01) var surface_stand_height := 0.08
+## Desired CAMERA height above the sampled rock while landed. The XR rig is
+## translated to compensate the tracked local head offset, so this is the
+## actual in-game viewpoint—not an extra height added under the player's feet.
+## A deliberately low 0.55 m keeps the ground close on these tiny planets.
+@export_range(0.1, 1.5, 0.05) var surface_stand_height := 0.55
 ## Footprints left behind while walking, so a planet you have already
 ## combed reads as visited. Capped per planet to bound the node count.
 @export_range(0, 400, 10) var max_footprints_per_planet := 120
@@ -784,6 +784,10 @@ func _crash(message: String, haptic_duration: float) -> void:
 
 
 func _land_on(planet: Node3D, _collision_distance: float, impact_speed: float) -> void:
+	# Capture the physical impact direction while flight still uses the rig
+	# origin as its authoritative point. The tracked camera can be offset from
+	# that point and must not choose a different side of a small planet.
+	var impact_position := get_spacecraft_world_position()
 	state = FlightState.LANDED
 	_landed_planet = planet
 	_surface_walk_forward = Vector3.ZERO
@@ -796,23 +800,23 @@ func _land_on(planet: Node3D, _collision_distance: float, impact_speed: float) -
 	# Landing on the collision shell therefore left the player visibly hovering
 	# until the first walking input re-sampled the mesh. Use the impact direction
 	# to settle onto the same real-surface target used by surface walking.
-	var position_now := get_spacecraft_world_position()
-	var landing_target := _surface_target(planet, position_now)
+	var view_position := _get_landed_view_position()
+	var landing_target := _surface_target(planet, impact_position)
 
 	# Glide in over landing_animation_seconds rather than teleporting.
 	# _physics_process advances this; snapping was the disorienting part of
 	# a touchdown, so the rig now travels the last stretch under animation.
-	_landing_from = global_position
-	_landing_to = global_position + landing_target - position_now
+	_landing_from = view_position
+	_landing_to = landing_target
 	_landing_elapsed = 0.0
 	if landing_animation_seconds <= 0.0:
-		global_position = _landing_to
+		_place_landed_view_at(_landing_to)
 		_landing_elapsed = -1.0
 
 	_pulse_controllers(0.3, 0.2)
 	# Touchdown dust: bigger burst for a harder landing.
 	_spawn_dust(
-		get_spacecraft_world_position(),
+		landing_target,
 		planet,
 		int(lerpf(12.0, 26.0, clampf(impact_speed / landing_speed_threshold, 0.0, 1.0))),
 		lerpf(1.6, 3.2, clampf(impact_speed / landing_speed_threshold, 0.0, 1.0)),
@@ -891,7 +895,7 @@ func _walk_on_surface(delta: float, input: Vector2) -> void:
 	# on the narrow ones. This is also what puts you at the beavers' level.
 	var stepped_direction := (stepped - center).normalized()
 	var target := center + stepped_direction * _stand_radius(_landed_planet, stepped_direction)
-	global_position += target - position_now
+	_place_landed_view_at(target)
 
 	_leave_footprint(target, stepped_direction)
 	if _walk_dust_cooldown <= 0.0:
@@ -906,10 +910,14 @@ func _advance_landing(delta: float) -> void:
 	var progress := clampf(_landing_elapsed / maxf(landing_animation_seconds, 0.001), 0.0, 1.0)
 	# Ease-out: close the gap quickly, then settle slowly.
 	var eased := 1.0 - pow(1.0 - progress, 3.0)
-	global_position = _landing_from.lerp(_landing_to, eased)
+	# Animate the VIEWPOINT itself. Interpolating the rig origin was incorrect
+	# in XR because subsequent surface alignment rotates the tracked camera
+	# around that origin and lifts it away from the intended path.
+	var desired_view := _landing_from.lerp(_landing_to, eased)
+	_place_landed_view_at(desired_view)
 
 	if _landed_planet != null:
-		var normal := get_spacecraft_world_position() - _landed_planet.global_position
+		var normal := desired_view - _landed_planet.global_position
 		if normal.length() > 0.01:
 			_align_rig_up(normal.normalized(), delta * 2.0)
 
@@ -976,9 +984,8 @@ func _stand_radius(planet: Node3D, direction: Vector3) -> float:
 	return fallback
 
 
-## Point at which the XR rig origin should stand on the imported mesh. The
-## direction comes from the collision/previous position; the radius comes
-## from sampled model geometry rather than the conservative collision shell.
+## Point at which the active landed VIEWPOINT should sit on the imported
+## mesh. In XR this is the camera; on desktop it remains the rig origin.
 func _surface_target(planet: Node3D, around: Vector3) -> Vector3:
 	var direction := around - planet.global_position
 	if direction.length_squared() < 0.0001:
@@ -990,16 +997,36 @@ func _surface_target(planet: Node3D, around: Vector3) -> Vector3:
 func _snap_to_landed_surface() -> void:
 	if _landed_planet == null:
 		return
-	var position_now := get_spacecraft_world_position()
-	global_position += _surface_target(_landed_planet, position_now) - position_now
+	var position_now := _get_landed_view_position()
+	_place_landed_view_at(_surface_target(_landed_planet, position_now))
+
+
+## OpenXR supplies the camera's tracked local pose inside XROrigin3D. Surface
+## placement must therefore target the camera itself; moving only the origin
+## leaves the view one real-world head-height above the requested point.
+## `force_xr` exists solely for deterministic headless regression coverage.
+func _get_landed_view_position(force_xr := false) -> Vector3:
+	if _flight_camera != null and (force_xr or get_viewport().use_xr):
+		return _flight_camera.global_position
+	return global_position
+
+
+func _place_landed_view_at(target: Vector3, force_xr := false) -> void:
+	global_position += target - _get_landed_view_position(force_xr)
 
 
 ## Rotate the whole rig so its up-axis leans toward `target_up`. Walking
 ## around a sphere without this leaves you sideways (and eventually upside
 ## down) on the far side; with it, the horizon tips exactly as it would if
 ## you really were strolling around the little world.
-## Rotation is applied about the rig origin, so your position is unchanged.
-func _align_rig_up(target_up: Vector3, weight: float) -> void:
+## In XR rotation is applied about the tracked CAMERA, not the rig origin.
+## Otherwise a 1.6 m tracked head offset swings through an arc on every
+## touchdown and visibly raises the player even after height correction.
+func _align_rig_up(
+	target_up: Vector3,
+	weight: float,
+	force_xr_view_pivot := false
+) -> void:
 	var current_up := global_basis.y.normalized()
 	var goal := target_up.normalized()
 	var axis := current_up.cross(goal)
@@ -1008,9 +1035,20 @@ func _align_rig_up(target_up: Vector3, weight: float) -> void:
 	var angle := current_up.angle_to(goal) * clampf(weight, 0.0, 1.0)
 	if absf(angle) < 0.00001:
 		return
-	var pivot := global_position
+	var use_view_pivot := (
+		_flight_camera != null
+		and (
+			force_xr_view_pivot
+			or (state == FlightState.LANDED and get_viewport().use_xr)
+		)
+	)
+	var view_pivot := _get_landed_view_position(true) if use_view_pivot else Vector3.ZERO
+	var origin_pivot := global_position
 	global_basis = Basis(axis.normalized(), angle) * global_basis
-	global_position = pivot
+	if use_view_pivot:
+		global_position += view_pivot - _get_landed_view_position(true)
+	else:
+		global_position = origin_pivot
 
 
 ## Snap back to world-upright. During takeoff, `view_heading` is the headset's
@@ -1101,11 +1139,9 @@ func take_off() -> void:
 	# leveled. Position changes below do not alter this direction.
 	var view_heading_before_takeoff := get_view_heading()
 	var away := Vector2.RIGHT
-	var target_position := global_position + Vector3(
-		0.0,
-		start_position.z - launch_from.y,
-		0.0
-	)
+	# The final FLYING reference is the rig origin again, so target an explicit
+	# origin position rather than offsetting it by the landed camera pose.
+	var target_position := Vector3(launch_from.x, start_position.z, launch_from.z)
 	if _landed_planet != null:
 		var center := _landed_planet.global_position
 		var horizontal := Vector2(launch_from.x - center.x, launch_from.z - center.z)
@@ -1123,11 +1159,7 @@ func take_off() -> void:
 				+ takeoff_clearance_margin
 			)
 			var target := Vector2(center.x, center.z) + away * clear_radius
-			target_position = global_position + Vector3(
-				target.x - launch_from.x,
-				start_position.z - launch_from.y,
-				target.y - launch_from.z
-			)
+			target_position = Vector3(target.x, start_position.z, target.y)
 
 	# Animate position and leveling together. State remains LANDED during the
 	# glide, so gravity and collision cannot fight the transition.
@@ -1692,7 +1724,7 @@ func get_spacecraft_world_position() -> Vector3:
 	# free inside the cockpit, but leaning or room-scale motion cannot make the
 	# physics position drift away from the visible hull.
 	if state == FlightState.LANDED:
-		return global_position
+		return _get_landed_view_position()
 	return Vector3(global_position.x, start_position.z, global_position.z)
 
 
