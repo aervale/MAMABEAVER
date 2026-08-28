@@ -8,10 +8,12 @@ uniform float strength : hint_range(0.0, 1.0) = 0.0;
 void fragment() {
 	vec2 centered = UV * 2.0 - 1.0;
 	float radius = length(centered);
-	// The clear centre contracts as motion grows. Edges stay soft so the
-	// overlay reads as reduced peripheral vision rather than a hard mask.
-	float inner_radius = mix(0.92, 0.34, strength);
-	float mask = smoothstep(inner_radius, inner_radius + 0.32, radius);
+	// Keep a fully clear centre, but let ordinary walking visibly reach the
+	// peripheral field. A wide feather avoids a distracting hard tunnel edge.
+	float shaped_strength = smoothstep(0.0, 1.0, strength);
+	float inner_radius = mix(0.98, 0.38, shaped_strength);
+	float feather = mix(0.24, 0.34, shaped_strength);
+	float mask = smoothstep(inner_radius, inner_radius + feather, radius);
 	ALBEDO = vec3(0.0);
-	ALPHA = mask * min(strength * 1.18, 0.86);
+	ALPHA = mask * min(strength * 1.35, 0.9);
 }
