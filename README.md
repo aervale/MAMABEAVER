@@ -1,7 +1,7 @@
 # Star Dodge XR: Fuel and ODE Flow Navigation
 
 A Godot 4.7.2 OpenXR/desktop spacecraft game. Fly from logical coordinate
-`(0, 0, 10)` to the MIT destination at `(100, 100, 10)` while navigating the
+`(0, 0, 10)` to the MIT destination at `(200, 200, 10)` while navigating the
 gravity fields and collision volumes of ten planets and five black holes.
 
 ## Current gameplay
@@ -15,8 +15,10 @@ gravity fields and collision volumes of ten planets and five black holes.
 - Fuel starts at `100` and full thrust consumes `8` units per second.
 - Coasting consumes no fuel; gravity and inertia continue to move the ship.
 - The 3D floor mesh and floor collision are removed for an open-space view.
-- The logical flight boundary remains `X/Y=-20..120` and is enforced in code.
+- The logical flight boundary is `X/Y=-20..220` and is enforced in code.
 - The upper-right minimap is shared by desktop and in-headset displays.
+- Land on planets and shoot Beaver targets; delivering 20 to MIT wins.
+- Original procedural cues play for firing, Beaver capture, MIT deposit, and victory.
 
 At startup and after a reset, the spacecraft is stationary, gravity is not
 applied, and the minimap reports `FLOW READY`. Press `B` or `Y` to engage the
@@ -52,7 +54,7 @@ predicted three-dimensional point while altitude remains fixed at logical
 one prediction instead of integrating separately.
 
 The removed floor does not define the play area. `spaceship_flight.gd` clamps
-real and predicted positions to `(-20,-20)..(120,120)`, while both desktop and
+real and predicted positions to `(-20,-20)..(220,220)`, while both desktop and
 VR minimaps retain the same coordinate range.
 
 By default, the forecast assumes the current head-relative thrust vector is

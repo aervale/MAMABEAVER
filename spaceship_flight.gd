@@ -46,8 +46,8 @@
 #   * approaching a planet faster than you could land triggers a loud HUD
 #     warning (see _update_impact_warning) before you hit it.
 #   * touch a planet faster, or any black hole capture -> CRASHED.
-#   * reach MIT: cargo is BANKED (run continues); ARRIVED (win) only when
-#     every beaver is delivered — see beaver_director.gd. Without a
+#   * reach MIT: cargo is BANKED (run continues); ARRIVED (win) when the
+#     configured Beaver delivery target is met — see beaver_director.gd. Without a
 #     BeaverExhibit in the scene, arrival = win, like the pre-beaver game.
 # End states zero velocity, pulse haptics, and wait for restart (A/X, R).
 #
@@ -171,6 +171,7 @@ const MAP_EXPAND_BUTTONS: Array[StringName] = [
 ## Warn when a planet is this many seconds away at the current closing speed.
 @export_range(0.5, 8.0, 0.25) var impact_warning_seconds := 2.5
 @export_node_path("Node3D") var beaver_director_path: NodePath
+@export_node_path("Node") var game_sfx_path: NodePath
 
 @export_group("Planet gravity")
 ## Safety cap only affects pathological positions inside a planet.
@@ -209,6 +210,7 @@ var _fire_was_pressed := [false, false]
 var _landed_planet: Node3D = null
 var _takeoff_grace := 0.0
 var _beaver_director: Node3D = null
+var _game_sfx: Node = null
 var _live_bolts: Array[Node3D] = []
 var _inside_arrival_zone := false
 var _banner_text := ""
@@ -250,6 +252,13 @@ func _ready() -> void:
 	_vr_status = get_node_or_null(vr_status_path) as Label3D
 	_desktop_status = get_node_or_null(desktop_status_path) as Label
 	_beaver_director = get_node_or_null(beaver_director_path) as Node3D
+	_game_sfx = get_node_or_null(game_sfx_path)
+	if (
+		_beaver_director != null
+		and _beaver_director.has_signal(&"beaver_caught")
+		and not _beaver_director.is_connected(&"beaver_caught", _on_beaver_caught)
+	):
+		_beaver_director.connect(&"beaver_caught", _on_beaver_caught)
 	for controller in [_left_controller, _right_controller]:
 		if controller != null and not controller.button_pressed.is_connected(_on_controller_button_pressed):
 			controller.button_pressed.connect(_on_controller_button_pressed)
@@ -1062,27 +1071,50 @@ func _handle_arrival_zone() -> void:
 		state = FlightState.ARRIVED
 		velocity = Vector2.ZERO
 		_pulse_controllers(0.45, 0.5)
+		_play_game_sfx(&"play_victory")
 		print("SpacecraftFlight|INFO: destination reached")
 		return
 
 	var banked := int(_beaver_director.call("bank_cargo"))
 	var delivered := int(_beaver_director.call("get_delivered_count"))
-	var total := int(_beaver_director.call("get_total_count"))
-	if total > 0 and delivered >= total:
+	var required := _required_beaver_count()
+	if banked > 0:
+		_play_game_sfx(&"play_mit_deposit")
+	if required > 0 and delivered >= required:
 		state = FlightState.ARRIVED
 		velocity = Vector2.ZERO
 		_pulse_controllers(0.45, 0.5)
 		# Final delivery gets the biggest send-off.
 		_play_deposit_effect(maxi(banked, 1))
-		print("SpacecraftFlight|INFO: all %d beavers delivered — mission complete" % total)
+		_schedule_victory_sound()
+		print("SpacecraftFlight|INFO: %d-beaver target delivered — mission complete" % required)
 	elif banked > 0:
 		_set_banner("BANKED %d BEAVER%s · %d TO GO" % [
-			banked, "" if banked == 1 else "S", total - delivered
+			banked, "" if banked == 1 else "S", maxi(required - delivered, 0)
 		], 3.0)
 		_pulse_controllers(0.3, 0.25)
 		_play_deposit_effect(banked)
 	else:
 		_set_banner("NO CARGO · SHOOT BEAVERS ON PLANETS", 2.5)
+
+
+func _schedule_victory_sound() -> void:
+	# Let the cargo-release cue establish the MIT deposit before the fanfare.
+	get_tree().create_timer(0.7).timeout.connect(_play_victory_sound)
+
+
+func _play_victory_sound() -> void:
+	if state == FlightState.ARRIVED:
+		_play_game_sfx(&"play_victory")
+
+
+func _on_beaver_caught(_beaver: Node3D) -> void:
+	_play_game_sfx(&"play_beaver_caught")
+
+
+func _play_game_sfx(method: StringName) -> void:
+	if _game_sfx != null and _game_sfx.has_method(method):
+		_game_sfx.call(method)
 
 
 ## Loud warning when a planet is closing faster than you could survive.
@@ -1324,6 +1356,7 @@ func _try_fire(origin: Vector3, direction: Vector3) -> void:
 		get_tree().current_scene.add_child(bolt)
 	bolt.global_position = origin
 	_live_bolts.append(bolt)
+	_play_game_sfx(&"play_trigger_shot")
 	_pulse_controllers(0.15, 0.08)
 
 
@@ -1401,17 +1434,25 @@ func _beaver_status_line() -> String:
 		return ""
 	return "\nBVR %d/%d   CARGO %d" % [
 		int(_beaver_director.call("get_delivered_count")),
-		int(_beaver_director.call("get_total_count")),
+		_required_beaver_count(),
 		int(_beaver_director.call("get_cargo_count")),
 	]
 
 
 func _arrival_message() -> String:
 	if _beaver_director != null and _beaver_director.has_method("get_total_count"):
-		return "ALL %d BEAVERS DELIVERED TO MIT\nPress A/X or R to fly again" % int(
-			_beaver_director.call("get_total_count")
-		)
+		return "%d BEAVERS DELIVERED TO MIT\nPress A/X or R to fly again" % _required_beaver_count()
 	return "DESTINATION REACHED\nPress A/X or R to fly again"
+
+
+func _required_beaver_count() -> int:
+	if _beaver_director == null:
+		return 0
+	if _beaver_director.has_method("get_required_count"):
+		return int(_beaver_director.call("get_required_count"))
+	if _beaver_director.has_method("get_total_count"):
+		return int(_beaver_director.call("get_total_count"))
+	return 0
 
 
 func get_fuel_ratio() -> float:

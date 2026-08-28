@@ -17,7 +17,8 @@
 # rest use beaver.gd's ~15-primitive fallback. No model file -> all fallback.
 #
 # API consumed by spaceship_flight.gd and flight_minimap.gd (duck-typed):
-#   get_total_count / get_cargo_count / get_delivered_count() -> int
+#   get_total_count / get_required_count / get_cargo_count /
+#   get_delivered_count() -> int
 #   get_planet_beaver_count(planet: Node3D) -> int      (minimap badges)
 #   find_beaver_near(world_pos, radius) -> BeaverCritter|null  (bolt hits)
 #   begin_tractor(beaver, flight) -> bool
@@ -27,10 +28,14 @@
 extends Node3D
 class_name BeaverDirector
 
+signal beaver_caught(beaver: Node3D)
+
 const BeaverScript = preload("res://beaver.gd")
 const MODEL_PATH := "res://models/beaver/Beaver.fbx"
 
 @export_range(1, 12, 1) var beavers_per_planet := 5
+## Delivering this many ends the mission; extra spawned beavers preserve route choice.
+@export_range(1, 100, 1) var required_deliveries := 20
 ## How many beavers may use the imported 17.5k-tri model (Quest budget).
 @export_range(0, 30, 1) var imported_model_budget := 6
 @export var beaver_height_meters := 1.2
@@ -182,8 +187,9 @@ func _collect_surface_samples(planet: Node3D) -> PackedVector3Array:
 	return samples
 
 
-func _on_beaver_collected(_beaver: Node3D) -> void:
+func _on_beaver_collected(beaver: Node3D) -> void:
 	_cargo += 1
+	beaver_caught.emit(beaver)
 	print("BeaverDirector|INFO: beaver aboard, cargo %d" % _cargo)
 
 
@@ -191,6 +197,10 @@ func _on_beaver_collected(_beaver: Node3D) -> void:
 
 func get_total_count() -> int:
 	return _beavers.size()
+
+
+func get_required_count() -> int:
+	return mini(required_deliveries, _beavers.size())
 
 
 func get_cargo_count() -> int:

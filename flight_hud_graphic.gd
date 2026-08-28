@@ -35,9 +35,13 @@ const STATE_CRASHED := 1
 const STATE_ARRIVED := 2
 const STATE_WAITING := 3
 const STATE_LANDED := 4
+const CATCH_FLASH_DURATION := 1.25
 
 var _flight: Node3D
 var _beaver_director: Node3D
+var _last_collected := -1
+var _catch_increment := 0
+var _catch_flash_remaining := 0.0
 
 
 func _ready() -> void:
@@ -45,9 +49,21 @@ func _ready() -> void:
 	_find_scene_nodes()
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
 	if _flight == null:
 		_find_scene_nodes()
+	var collected := _collected_count()
+	if _last_collected < 0:
+		_last_collected = collected
+	elif collected > _last_collected:
+		_catch_increment = collected - _last_collected
+		_catch_flash_remaining = CATCH_FLASH_DURATION
+		_last_collected = collected
+	elif collected < _last_collected:
+		# A reset should quietly restore the counter, not look like a pickup.
+		_last_collected = collected
+		_catch_flash_remaining = 0.0
+	_catch_flash_remaining = maxf(_catch_flash_remaining - delta, 0.0)
 	queue_redraw()
 
 
@@ -76,21 +92,65 @@ func _draw() -> void:
 	var collected := 0
 	var total := 0
 	if _beaver_director != null and _beaver_director.has_method("get_total_count"):
-		total = int(_beaver_director.call("get_total_count"))
-		collected = int(_beaver_director.call("get_delivered_count")) \
-			+ int(_beaver_director.call("get_cargo_count"))
+		total = _mission_target()
+		collected = _collected_count()
+	var catch_flash := _catch_flash_amount()
+	var count_panel := Rect2(Vector2(cursor - 8.0, centre_y - 39.0), Vector2(196.0, 91.0))
+	if catch_flash > 0.001:
+		# Expanding translucent frames read as a scanner confirming the capture.
+		for ring in 3:
+			var expansion := (1.0 - catch_flash) * 11.0 + float(ring) * 5.0
+			var ring_rect := count_panel.grow(expansion)
+			draw_rect(
+				ring_rect,
+				Color(0.28, 1.0, 0.48, catch_flash * (0.28 - float(ring) * 0.065)),
+				false,
+				2.0
+			)
 	draw_string(
 		font,
 		Vector2(cursor, centre_y - 14.0),
 		"BEAVERS COLLECTED",
-		HORIZONTAL_ALIGNMENT_LEFT, -1.0, 15, Color(0.55, 0.95, 1.0)
+		HORIZONTAL_ALIGNMENT_LEFT,
+		-1.0,
+		15,
+		Color(0.55, 0.95, 1.0).lerp(Color(0.75, 1.0, 0.72), catch_flash)
 	)
+	var count_text := "%d/%d" % [collected, total]
+	var count_size := 26 + int(round(catch_flash * 10.0))
+	if catch_flash > 0.001:
+		# A slightly oversized translucent pass creates a cheap neon bloom.
+		draw_string(
+			font,
+			Vector2(cursor - 2.0, centre_y + 18.0),
+			count_text,
+			HORIZONTAL_ALIGNMENT_LEFT,
+			-1.0,
+			count_size + 4,
+			Color(0.25, 1.0, 0.42, catch_flash * 0.34)
+		)
 	draw_string(
 		font,
 		Vector2(cursor, centre_y + 16.0),
-		"%d/%d" % [collected, total],
-		HORIZONTAL_ALIGNMENT_LEFT, -1.0, 26, COLOR_FLYING
+		count_text,
+		HORIZONTAL_ALIGNMENT_LEFT,
+		-1.0,
+		count_size,
+		COLOR_FLYING.lerp(Color(0.78, 1.0, 0.42), catch_flash)
 	)
+	if catch_flash > 0.001:
+		draw_string(
+			font,
+			Vector2(cursor, centre_y + 46.0),
+			"+%d BEAVER%s SECURED" % [
+				_catch_increment,
+				"" if _catch_increment == 1 else "S",
+			],
+			HORIZONTAL_ALIGNMENT_LEFT,
+			-1.0,
+			13,
+			Color(0.45, 1.0, 0.55, catch_flash)
+		)
 	cursor += 210.0
 
 	# 3. Segmented fuel bar + big percentage.
@@ -135,12 +195,26 @@ func _draw_state_lamp(centre: Vector2, accent: Color, state: int) -> void:
 func _draw_beaver_vessel(rect: Rect2) -> void:
 	var ratio := 0.0
 	if _beaver_director != null and _beaver_director.has_method("get_total_count"):
-		var total := maxi(int(_beaver_director.call("get_total_count")), 1)
+		var total := maxi(_mission_target(), 1)
 		var have := int(_beaver_director.call("get_delivered_count")) \
 			+ int(_beaver_director.call("get_cargo_count"))
 		ratio = clampf(float(have) / float(total), 0.0, 1.0)
 
 	var outline := _beaver_outline(rect)
+	var catch_flash := _catch_flash_amount()
+	if catch_flash > 0.001:
+		var centre := rect.get_center()
+		for ring in 2:
+			var radius := rect.size.y * (0.48 + float(ring) * 0.1 + (1.0 - catch_flash) * 0.08)
+			draw_arc(
+				centre,
+				radius,
+				-PI * 0.8,
+				PI * 0.8,
+				28,
+				Color(0.35, 1.0, 0.5, catch_flash * (0.5 - float(ring) * 0.16)),
+				2.0
+			)
 
 	# Fill portion: clip the silhouette to the bottom `ratio` of its height
 	# by intersecting the polygon with a rising waterline.
@@ -158,11 +232,18 @@ func _draw_beaver_vessel(rect: Rect2) -> void:
 				var t := (waterline - current.y) / (next.y - current.y)
 				filled.append(current.lerp(next, t))
 		if filled.size() >= 3:
-			draw_colored_polygon(filled, Color(0.3, 0.95, 1.0, 0.55))
+			draw_colored_polygon(
+				filled,
+				Color(0.3, 0.95, 1.0, 0.55).lerp(Color(0.5, 1.0, 0.35, 0.92), catch_flash)
+			)
 
 	var loop := outline.duplicate()
 	loop.append(outline[0])
-	draw_polyline(loop, Color(1.0, 0.3, 0.32, 0.95), 2.0)
+	draw_polyline(
+		loop,
+		Color(1.0, 0.3, 0.32, 0.95).lerp(Color(0.7, 1.0, 0.45, 1.0), catch_flash),
+		2.0 + catch_flash * 1.5
+	)
 
 
 ## Chunky beaver profile (head, ear, muzzle, body, tail) as a polygon in
@@ -306,3 +387,24 @@ func _find_scene_nodes() -> void:
 		return
 	_flight = scene.get_node_or_null("XROrigin3D") as Node3D
 	_beaver_director = scene.get_node_or_null("BeaverExhibit") as Node3D
+
+
+func _mission_target() -> int:
+	if _beaver_director == null:
+		return 0
+	if _beaver_director.has_method("get_required_count"):
+		return int(_beaver_director.call("get_required_count"))
+	return int(_beaver_director.call("get_total_count"))
+
+
+func _collected_count() -> int:
+	if _beaver_director == null:
+		return 0
+	return (
+		int(_beaver_director.call("get_delivered_count"))
+		+ int(_beaver_director.call("get_cargo_count"))
+	)
+
+
+func _catch_flash_amount() -> float:
+	return clampf(_catch_flash_remaining / CATCH_FLASH_DURATION, 0.0, 1.0)

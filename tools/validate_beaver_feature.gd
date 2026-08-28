@@ -37,6 +37,7 @@ func _run_checks(scene: Node) -> void:
 
 	var flight := scene.get_node_or_null("XROrigin3D")
 	var director := scene.get_node_or_null("BeaverExhibit")
+	var game_sfx := scene.get_node_or_null("GameSFX")
 	var planet := scene.get_node_or_null("MoonExhibit/Planet01") as Node3D
 	var background_music := scene.get_node_or_null("BackgroundMusic") as AudioStreamPlayer
 	var xr_camera := scene.get_node_or_null("XROrigin3D/XRCamera3D") as XRCamera3D
@@ -46,6 +47,12 @@ func _run_checks(scene: Node) -> void:
 	var right_controller := scene.get_node_or_null("XROrigin3D/XRControllerRight") as XRController3D
 	_check(flight != null, "XROrigin3D must exist")
 	_check(director != null, "BeaverExhibit must exist")
+	_check(
+		game_sfx != null
+		and game_sfx.has_method("has_all_sounds")
+		and bool(game_sfx.call("has_all_sounds")),
+		"four original one-shot sound streams are generated at startup"
+	)
 	_check(planet != null, "Planet01 must exist")
 	_check(
 		background_music != null
@@ -90,6 +97,11 @@ func _run_checks(scene: Node) -> void:
 	# --- spawning ---
 	var total := int(director.call("get_total_count"))
 	var per_planet := int(director.get("beavers_per_planet"))
+	_check(
+		director.has_method("get_required_count")
+		and int(director.call("get_required_count")) == 20,
+		"mission success target is 20 delivered beavers"
+	)
 	_check(total == per_planet * 10, "director spawns %d beavers on each of 10 planets (got %d)" % [per_planet, total])
 	_check(int(director.call("get_planet_beaver_count", planet)) == per_planet, "Planet01 hosts them all")
 	# Full-sphere spread: beavers must exist well above AND below the plane.
@@ -141,6 +153,7 @@ func _run_checks(scene: Node) -> void:
 	# planet you stand on must not swallow it.
 	var muzzle: Vector3 = flight.call("get_spacecraft_world_position")
 	var prewarmed_bolt: Node3D = flight.get("_prewarmed_bolt") as Node3D
+	var shot_sounds_before := int(game_sfx.call("get_play_count", &"trigger_shot"))
 	flight.call("_try_fire", muzzle, Vector3(0, 0, 1))
 	_check(_count_bolts(scene) == 1, "a surface-skimming shot fires while landed")
 	var skimmer: Node3D = null
@@ -154,6 +167,10 @@ func _run_checks(scene: Node) -> void:
 	_check(
 		skimmer == prewarmed_bolt and flight.get("_prewarmed_bolt") == null,
 		"first trigger pull reuses the prewarmed bolt without construction"
+	)
+	_check(
+		int(game_sfx.call("get_play_count", &"trigger_shot")) == shot_sounds_before + 1,
+		"a successful trigger shot plays its firing sound"
 	)
 	# Straight down into the rock is the one aim that gets refused.
 	var into := (planet.global_position - muzzle).normalized()
@@ -356,6 +373,7 @@ func _run_checks(scene: Node) -> void:
 	var beaver: Node3D = director.call("find_beaver_near", planet.global_position, 20.0)
 	_check(beaver != null, "find_beaver_near locates an idle beaver")
 	if beaver != null:
+		var caught_sounds_before := int(game_sfx.call("get_play_count", &"beaver_caught"))
 		director.call("begin_tractor", beaver, flight)
 		# Headless frames run uncapped, so wait on wall-clock time (the
 		# tractor takes TRACTOR_DURATION = 1.5 s of _process delta).
@@ -363,16 +381,44 @@ func _run_checks(scene: Node) -> void:
 		while int(director.call("get_cargo_count")) == 0 and deadline.time_left > 0.0:
 			await process_frame
 		_check(int(director.call("get_cargo_count")) == 1, "tractored beaver becomes cargo")
+		_check(
+			int(game_sfx.call("get_play_count", &"beaver_caught")) == caught_sounds_before + 1,
+			"beaver entering cargo plays the caught sound"
+		)
 		_check(int(director.call("get_planet_beaver_count", planet)) == per_planet - 1, "planet badge count drops")
 
 	# --- banking at MIT (not a win while beavers remain) ---
 	var destination: Vector3 = flight.get("destination")
+	var deposit_sounds_before := int(game_sfx.call("get_play_count", &"mit_deposit"))
 	_teleport(flight, Vector3(destination.x, 10.0, destination.y), Vector2.ZERO)
 	await physics_frame
 	await physics_frame
 	_check(int(flight.get("state")) == STATE_FLYING, "arriving with beavers still out there is not a win")
 	_check(int(director.call("get_delivered_count")) == 1, "cargo banks on arrival")
 	_check(int(director.call("get_cargo_count")) == 0, "cargo empties after banking")
+	_check(
+		int(game_sfx.call("get_play_count", &"mit_deposit")) == deposit_sounds_before + 1,
+		"banking cargo at MIT plays the deposit sound"
+	)
+
+	# --- the twentieth delivery wins and plays a delayed fanfare ---
+	var required := int(director.call("get_required_count"))
+	director.set("_delivered", required - 1)
+	director.set("_cargo", 1)
+	flight.set("_inside_arrival_zone", false)
+	var final_deposit_before := int(game_sfx.call("get_play_count", &"mit_deposit"))
+	var victory_sounds_before := int(game_sfx.call("get_play_count", &"victory"))
+	flight.call("_handle_arrival_zone")
+	_check(int(flight.get("state")) == STATE_ARRIVED, "delivery 20 completes the mission")
+	_check(
+		int(game_sfx.call("get_play_count", &"mit_deposit")) == final_deposit_before + 1,
+		"final MIT delivery still plays its cargo-release sound"
+	)
+	await create_timer(0.8).timeout
+	_check(
+		int(game_sfx.call("get_play_count", &"victory")) == victory_sounds_before + 1,
+		"mission completion plays the victory fanfare after the deposit"
+	)
 
 	# --- reset restores everything ---
 	flight.call("reset_flight")
