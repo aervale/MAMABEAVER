@@ -32,10 +32,11 @@ var _play_counts: Dictionary = {
 
 
 func _ready() -> void:
-	_add_player(SHOT, 0.28, -4.0, 4, 1101)
-	_add_player(CAUGHT, 0.62, -3.0, 3, 2202)
-	_add_player(DEPOSIT, 1.25, -3.0, 2, 3303)
-	_add_player(VICTORY, 2.4, -2.0, 1, 4404)
+	# Positive gain keeps short cues audible over the music on Quest speakers.
+	_add_player(SHOT, 0.28, 1.0, 4, 1101)
+	_add_player(CAUGHT, 0.62, 2.0, 3, 2202)
+	_add_player(DEPOSIT, 1.25, 1.0, 2, 3303)
+	_add_player(VICTORY, 2.4, 1.5, 1, 4404)
 
 
 func _add_player(

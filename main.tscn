@@ -93,7 +93,7 @@ script = ExtResource("1_ig7tw")
 
 [node name="BackgroundMusic" type="AudioStreamPlayer" parent="."]
 stream = ExtResource("25_bgm")
-volume_db = -10.0
+volume_db = -6.0
 
 [node name="GameSFX" type="Node" parent="."]
 script = ExtResource("28_game_sfx")
