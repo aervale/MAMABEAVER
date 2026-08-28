@@ -233,11 +233,23 @@ var _takeoff_from := Vector3.ZERO
 var _takeoff_to := Vector3.ZERO
 var _takeoff_from_basis := Basis.IDENTITY
 var _takeoff_to_basis := Basis.IDENTITY
+## Exact horizontal headset heading captured before leaving a tilted planet.
+## `_get_level_basis()` predicts the correct upright rig basis, then this
+## value is also used as closed-loop feedback during/after the animation.
+## The feedback step prevents small tracking/reference-space discrepancies
+## from accumulating over several landing cycles.
+var _takeoff_view_heading := Vector2.ZERO
 var _takeoff_away := Vector2.RIGHT
 var _takeoff_elapsed := -1.0
 ## Constructed during loading so the first trigger pull does not allocate
 ## meshes, particles, materials and their render resources in one frame.
 var _prewarmed_bolt: MagicBolt = null
+## A hidden node never reaches Godot's draw list, so merely constructing it
+## does not compile its mesh/transparent/particle GPU pipelines. We submit a
+## sub-pixel copy in front of the camera for a few startup frames, then hide
+## it until the first real shot.
+var _bolt_prewarm_frames_left := 0
+var _bolt_render_prewarm_complete := false
 var _map_expanded := false
 var _last_flight_input := Vector2.ZERO
 var _prediction_elapsed := 0.0
@@ -264,6 +276,21 @@ func _ready() -> void:
 			controller.button_pressed.connect(_on_controller_button_pressed)
 	reset_flight()
 	_prewarm_first_bolt()
+
+
+func _process(_delta: float) -> void:
+	# Keep the tiny warm-up projectile inside the active camera frustum long
+	# enough for opaque, transparent and particle draw pipelines to compile.
+	# Its own gameplay processing stays disabled, so it cannot move or hit.
+	if _bolt_prewarm_frames_left <= 0 or not is_instance_valid(_prewarmed_bolt):
+		return
+	if _flight_camera != null:
+		_prewarmed_bolt.global_position = (
+			_flight_camera.global_position - _flight_camera.global_basis.z * 0.45
+		)
+	_bolt_prewarm_frames_left -= 1
+	if _bolt_prewarm_frames_left <= 0:
+		_finish_bolt_render_prewarm()
 
 
 func _physics_process(delta: float) -> void:
@@ -368,6 +395,7 @@ func reset_flight() -> void:
 	# planets you have already combed, which is exactly what you want after
 	# dying and starting the run again.
 	_takeoff_elapsed = -1.0
+	_takeoff_view_heading = Vector2.ZERO
 	_level_rig()
 	_inside_arrival_zone = false
 	_banner_time_left = 0.0
@@ -943,6 +971,28 @@ func _level_rig(view_heading := Vector2.ZERO) -> void:
 	var pivot := global_position
 	global_basis = _get_level_basis(view_heading)
 	global_position = pivot
+	_correct_view_heading(view_heading)
+
+
+## Correct against the camera's ACTUAL global heading, rather than relying
+## only on the predicted local-camera transform. OpenXR may refresh its
+## reference-space pose while the rig is tilted on a planet; a tiny mismatch
+## then compounds over repeated landings. A world-Y yaw keeps the rig upright
+## while closing that error exactly. Vector2 stores world X/Z, whose signed
+## angle has the opposite sign to a right-handed rotation around world Y.
+func _correct_view_heading(desired_heading: Vector2) -> void:
+	if desired_heading.length_squared() <= 0.0001 or _flight_camera == null:
+		return
+	var current_heading := get_view_heading()
+	if current_heading.length_squared() <= 0.0001:
+		return
+	var desired := desired_heading.normalized()
+	var correction_yaw := -current_heading.angle_to(desired)
+	if absf(correction_yaw) <= 0.000001:
+		return
+	var pivot := global_position
+	global_basis = (Basis(Vector3.UP, correction_yaw) * global_basis).orthonormalized()
+	global_position = pivot
 
 
 ## Puff of surface dust, thrown along the planet's outward normal.
@@ -1011,6 +1061,7 @@ func take_off() -> void:
 	_takeoff_from = global_position
 	_takeoff_to = target_position
 	_takeoff_from_basis = global_basis.orthonormalized()
+	_takeoff_view_heading = view_heading_before_takeoff
 	_takeoff_to_basis = _get_level_basis(view_heading_before_takeoff)
 	_takeoff_away = away
 	_takeoff_elapsed = 0.0
@@ -1041,6 +1092,9 @@ func _advance_takeoff(delta: float) -> void:
 	var from_rotation := _takeoff_from_basis.get_rotation_quaternion()
 	var to_rotation := _takeoff_to_basis.get_rotation_quaternion()
 	global_basis = Basis(from_rotation.slerp(to_rotation, eased))
+	# Slerping a tilted parent can otherwise produce visible yaw drift even
+	# when the endpoint is correct. Close the horizontal view error every frame.
+	_correct_view_heading(_takeoff_view_heading)
 	if progress >= 1.0:
 		global_position = _takeoff_to
 		global_basis = _takeoff_to_basis
@@ -1048,6 +1102,10 @@ func _advance_takeoff(delta: float) -> void:
 
 
 func _finish_takeoff() -> void:
+	# One final correction uses the camera's live global transform. This is the
+	# important invariant across any number of land/walk/takeoff cycles.
+	_correct_view_heading(_takeoff_view_heading)
+	_takeoff_view_heading = Vector2.ZERO
 	_takeoff_elapsed = -1.0
 	state = FlightState.FLYING
 	velocity = _takeoff_away * takeoff_speed
@@ -1337,6 +1395,7 @@ func _try_fire(origin: Vector3, direction: Vector3) -> void:
 
 	var bolt: MagicBolt
 	if is_instance_valid(_prewarmed_bolt):
+		_finish_bolt_render_prewarm()
 		bolt = _prewarmed_bolt
 		_prewarmed_bolt = null
 		# It entered the tree during loading, so all procedural render resources
@@ -1344,9 +1403,9 @@ func _try_fire(origin: Vector3, direction: Vector3) -> void:
 		# first trigger frame.
 		bolt.reparent(get_tree().current_scene, false)
 		bolt.process_mode = Node.PROCESS_MODE_INHERIT
-		bolt.visible = true
 	else:
 		bolt = MagicBoltScript.new() as MagicBolt
+	bolt.prepare_for_launch()
 	bolt.velocity = direction.normalized() * bolt_speed
 	bolt.hit_radius = bolt_hit_radius
 	bolt.gravity_scale = bolt_gravity_scale
@@ -1365,9 +1424,18 @@ func _prewarm_first_bolt() -> void:
 		return
 	_prewarmed_bolt = MagicBoltScript.new() as MagicBolt
 	_prewarmed_bolt.name = "PrewarmedMagicBolt"
-	_prewarmed_bolt.visible = false
 	_prewarmed_bolt.process_mode = Node.PROCESS_MODE_DISABLED
 	add_child(_prewarmed_bolt)
+	_prewarmed_bolt.prepare_render_prewarm()
+	_bolt_prewarm_frames_left = 8
+	_bolt_render_prewarm_complete = false
+
+
+func _finish_bolt_render_prewarm() -> void:
+	_bolt_prewarm_frames_left = 0
+	if is_instance_valid(_prewarmed_bolt):
+		_prewarmed_bolt.visible = false
+	_bolt_render_prewarm_complete = true
 
 
 func _pulse_controllers(amplitude: float, duration: float) -> void:

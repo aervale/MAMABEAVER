@@ -48,6 +48,8 @@ var _play_max := Vector2(220.0, 220.0)
 var _lifetime := 0.0
 var _head: MeshInstance3D
 var _shell: MeshInstance3D
+var _light: OmniLight3D
+var _sparks: GPUParticles3D
 
 
 ## Called by the flight controller right after instantiation, before add_child.
@@ -114,13 +116,13 @@ func _ready() -> void:
 	_shell.scale = Vector3(0.75, 0.75, 2.6)
 	add_child(_shell)
 
-	var light := OmniLight3D.new()
-	light.name = "BoltLight"
-	light.light_color = Color(0.4, 0.8, 1.0)
-	light.light_energy = 1.6
-	light.omni_range = 5.0
-	light.shadow_enabled = false
-	add_child(light)
+	_light = OmniLight3D.new()
+	_light.name = "BoltLight"
+	_light.light_color = Color(0.4, 0.8, 1.0)
+	_light.light_energy = 1.6
+	_light.omni_range = 5.0
+	_light.shadow_enabled = false
+	add_child(_light)
 
 	_build_spark_trail()
 
@@ -161,17 +163,47 @@ func _build_spark_trail() -> void:
 	spark_mesh.size = Vector2(0.12, 0.12)
 	spark_mesh.material = spark_material
 
-	var sparks := GPUParticles3D.new()
-	sparks.name = "SparkTrail"
-	sparks.amount = 90
-	sparks.lifetime = 0.75
-	sparks.local_coords = false
-	sparks.visibility_aabb = AABB(Vector3.ONE * -30.0, Vector3.ONE * 60.0)
-	sparks.process_material = process
-	sparks.draw_pass_1 = spark_mesh
-	sparks.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	sparks.emitting = true
-	add_child(sparks)
+	_sparks = GPUParticles3D.new()
+	_sparks.name = "SparkTrail"
+	_sparks.amount = 90
+	_sparks.lifetime = 0.75
+	_sparks.local_coords = false
+	_sparks.visibility_aabb = AABB(Vector3.ONE * -30.0, Vector3.ONE * 60.0)
+	_sparks.process_material = process
+	_sparks.draw_pass_1 = spark_mesh
+	_sparks.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_sparks.emitting = true
+	add_child(_sparks)
+
+
+## Submit all expensive visual variants to the renderer during loading. The
+## projectile is sub-pixel but deliberately visible: `visible = false` would
+## skip the draw list and leave the first trigger pull compiling GPU pipelines.
+func prepare_render_prewarm() -> void:
+	_lifetime = 0.0
+	scale = Vector3.ONE * 0.0005
+	visible = true
+	# Lights have no shader pipeline to warm and could flash even when their
+	# parent is tiny, so only meshes and GPU particles participate.
+	if _light != null:
+		_light.visible = false
+	if _sparks != null:
+		_sparks.emitting = true
+		_sparks.restart()
+
+
+## Restore a prewarmed bolt to a pristine first-shot state. Restarting the
+## world-space trail also discards microscopic particles emitted by the camera
+## during warm-up instead of leaving a cyan speck behind the player's head.
+func prepare_for_launch() -> void:
+	_lifetime = 0.0
+	scale = Vector3.ONE
+	visible = true
+	if _light != null:
+		_light.visible = true
+	if _sparks != null:
+		_sparks.restart()
+		_sparks.emitting = true
 
 
 ## Splash burst left behind when the bolt ends, like the reference impact.
