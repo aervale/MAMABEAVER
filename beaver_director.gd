@@ -33,7 +33,11 @@ signal beaver_caught(beaver: Node3D)
 const BeaverScript = preload("res://beaver.gd")
 const MODEL_PATH := "res://models/beaver/Beaver.fbx"
 
-@export_range(1, 12, 1) var beavers_per_planet := 5
+## 3 rather than 5: every beaver keeps the real imported model (capping the
+## model count instead reintroduced the "only some planets look right"
+## problem), so the saving has to come from the total, and 30 skinned
+## meshes load and run comfortably where 50 did not.
+@export_range(1, 12, 1) var beavers_per_planet := 3
 ## Delivering this many ends the mission; extra spawned beavers preserve route choice.
 @export_range(1, 100, 1) var required_deliveries := 20
 ## How many beavers may use the imported model. 0 means "no limit", which

@@ -31,6 +31,12 @@ enum BeaverState {
 	DELIVERED,
 }
 
+## Beyond this distance from the viewer a beaver stops animating. Fifty
+## skinned meshes each running an AnimationPlayer is what made the scene
+## crawl; you cannot see a 1.2 m animation loop from 70 m away anyway.
+const ANIMATION_DISTANCE := 70.0
+const ANIMATION_CHECK_SECONDS := 0.5
+
 const TRACTOR_DURATION := 1.5
 const BOB_HEIGHT := 0.06
 const BOB_SPEED := 2.2
@@ -45,6 +51,8 @@ var _visual_root: Node3D
 ## AnimationPlayer from the imported model, if it ships with one.
 var _animator: AnimationPlayer
 var _idle_clip := ""
+var _animation_check := 0.0
+var _animation_awake := true
 var _flight: Node3D
 var _home_parent: Node3D
 var _home_transform: Transform3D
@@ -77,6 +85,7 @@ func _process(delta: float) -> void:
 			# The imported model animates itself; the hand-rolled bob is only
 			# for the procedural fallback, and running both looks wrong.
 			if _animator != null:
+				_update_animation_distance(delta)
 				return
 			# Gentle bob sells "alive" for the cost of one sine per frame.
 			_bob_phase += delta * BOB_SPEED
@@ -221,16 +230,21 @@ const EXTRA_ANIMATIONS := [
 const TRACTOR_CLIP := "Swim"
 
 
-## Copy clips out of the standalone animation files onto our own player.
-## Both files are exported from the same rig, so the track paths line up.
-func _merge_external_animations() -> void:
-	if _animator == null:
-		return
-	var library := _animator.get_animation_library("")
-	if library == null:
-		library = AnimationLibrary.new()
-		_animator.add_animation_library("", library)
+## Clips harvested from the standalone animation files, loaded ONCE and
+## shared by every beaver.
+##
+## This cache is not an optimisation, it is a fix: harvesting meant
+## instantiating each donor FBX to reach its AnimationPlayer, and doing
+## that per beaver meant thirty beavers instantiated ninety extra skinned
+## scenes at load. Scene build time went from minutes back to instant.
+static var _shared_clips: Dictionary = {}
+static var _shared_clips_ready := false
 
+
+static func _load_shared_clips() -> void:
+	if _shared_clips_ready:
+		return
+	_shared_clips_ready = true
 	for path in EXTRA_ANIMATIONS:
 		if not ResourceLoader.exists(path):
 			continue
@@ -238,14 +252,59 @@ func _merge_external_animations() -> void:
 		if packed == null:
 			continue
 		var temporary := packed.instantiate()
-		var source := _find_animation_player(temporary)
-		if source != null:
-			for clip_name in source.get_animation_list():
-				var clip := source.get_animation(clip_name)
-				if clip != null and not library.has_animation(clip_name):
-					library.add_animation(clip_name, clip.duplicate())
-		# The donor scene exists only to hand over its clips.
-		temporary.queue_free()
+		var pending: Array[Node] = [temporary]
+		while not pending.is_empty():
+			var node: Node = pending.pop_back()
+			if node is AnimationPlayer:
+				var source := node as AnimationPlayer
+				for clip_name in source.get_animation_list():
+					var clip := source.get_animation(clip_name)
+					if clip != null and not _shared_clips.has(clip_name):
+						_shared_clips[clip_name] = clip
+				break
+			for child in node.get_children():
+				pending.append(child)
+		temporary.free()
+
+
+## Attach the shared clips to this beaver's own player. The files are all
+## exported from the same rig, so the track paths line up.
+func _merge_external_animations() -> void:
+	if _animator == null:
+		return
+	_load_shared_clips()
+	var library := _animator.get_animation_library("")
+	if library == null:
+		library = AnimationLibrary.new()
+		_animator.add_animation_library("", library)
+	for clip_name in _shared_clips:
+		if not library.has_animation(clip_name):
+			library.add_animation(clip_name, _shared_clips[clip_name])
+
+
+## Pause the animation for beavers too far away to see moving. Every
+## beaver keeps its real model — capping the model count instead would have
+## brought back the exact "only some planets have proper beavers" problem —
+## so the saving comes from the mixer, not the mesh.
+## Checks are staggered and throttled, so this costs almost nothing.
+func _update_animation_distance(delta: float) -> void:
+	_animation_check -= delta
+	if _animation_check > 0.0:
+		return
+	# Stagger so fifty beavers never test on the same frame.
+	_animation_check = ANIMATION_CHECK_SECONDS * (0.75 + randf() * 0.5)
+
+	var camera := get_viewport().get_camera_3d()
+	if camera == null:
+		return
+	var near := global_position.distance_to(camera.global_position) <= ANIMATION_DISTANCE
+	if near == _animation_awake:
+		return
+	_animation_awake = near
+	if near:
+		_animator.play(_idle_clip if not _idle_clip.is_empty() else _animator.assigned_animation)
+	else:
+		_animator.pause()
 
 
 ## Switch clips if the model actually has the requested one; silently do
