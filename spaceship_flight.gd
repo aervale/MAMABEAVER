@@ -123,7 +123,7 @@ const MAP_EXPAND_BUTTONS: Array[StringName] = [
 @export_range(1.0, 40.0, 0.5) var flight_speed := 18.0
 @export_range(0.0, 3.0, 0.05) var linear_drag := 0.18
 @export_range(0.05, 5.0, 0.05) var spacecraft_radius := 0.25
-@export_range(0.5, 20.0, 0.5) var arrival_radius := 3.0
+@export_range(0.5, 20.0, 0.5) var arrival_radius := 5.0
 @export_range(0.0, 0.9, 0.05) var joystick_deadzone := 0.15
 
 @export_group("Fuel")
@@ -192,6 +192,10 @@ var _inside_arrival_zone := false
 var _banner_text := ""
 var _banner_time_left := 0.0
 var _walk_dust_cooldown := 0.0
+## Last reliable forward tangent while walking. Looking directly into or out
+## of the surface collapses the projected view direction; retaining this
+## tangent prevents the controls from flipping abruptly near that singularity.
+var _surface_walk_forward := Vector3.ZERO
 var _impact_warning := ""
 var _warning_haptic_cooldown := 0.0
 var _map_expanded := false
@@ -291,6 +295,7 @@ func reset_flight() -> void:
 	_prediction_elapsed = 0.0
 	_landed_planet = null
 	_takeoff_grace = 0.0
+	_surface_walk_forward = Vector3.ZERO
 	_level_rig()
 	_inside_arrival_zone = false
 	_banner_time_left = 0.0
@@ -622,6 +627,7 @@ func _crash(message: String, haptic_duration: float) -> void:
 func _land_on(planet: Node3D, collision_distance: float, impact_speed: float) -> void:
 	state = FlightState.LANDED
 	_landed_planet = planet
+	_surface_walk_forward = Vector3.ZERO
 	velocity = Vector2.ZERO
 	fuel = maximum_fuel
 
@@ -682,26 +688,36 @@ func _walk_on_surface(delta: float, input: Vector2) -> void:
 	if input.is_zero_approx():
 		return
 
-	# Build a walking frame from whatever camera the player is actually
-	# looking through (XRCamera3D in the headset, DesktopCamera otherwise).
+	# Build one ORTHOGONAL walking frame from the active camera. Projecting and
+	# normalizing forward/right independently makes them non-perpendicular on
+	# a curved surface, which distorts diagonals and feels like sideways drift.
 	var view := get_viewport().get_camera_3d()
 	var view_basis := view.global_basis if view != null else global_basis
-	var forward := -view_basis.z
-	var right := view_basis.x
-	# Project onto the tangent plane so movement hugs the surface.
-	forward -= normal * forward.dot(normal)
-	right -= normal * right.dot(normal)
-	if forward.length() < 0.01:
-		# Looking straight down at your feet: fall back to the view's up.
-		forward = view_basis.y - normal * view_basis.y.dot(normal)
-	if forward.length() < 0.01 or right.length() < 0.01:
+	var projected_view_forward := -view_basis.z
+	projected_view_forward -= normal * projected_view_forward.dot(normal)
+	var forward := projected_view_forward
+	if forward.length() < 0.08:
+		# Parallel-transport the previous tangent instead of switching suddenly
+		# to camera-up when the player looks along the surface normal.
+		forward = _surface_walk_forward - normal * _surface_walk_forward.dot(normal)
+	if forward.length() < 0.08:
+		var reference := Vector3.UP if absf(normal.y) < 0.9 else Vector3.FORWARD
+		forward = reference - normal * reference.dot(normal)
+	if forward.length() < 0.001:
 		return
+	forward = forward.normalized()
+	_surface_walk_forward = forward
+	var right := forward.cross(normal).normalized()
 
-	var move := right.normalized() * input.x + forward.normalized() * input.y
+	var input_strength := clampf(input.length(), 0.0, 1.0)
+	var input_direction := input / input_strength
+	var move := right * input_direction.x + forward * input_direction.y
 	if move.length() < 0.001:
 		return
 
-	var stepped := position_now + move.normalized() * surface_walk_speed * delta
+	# Preserve analog magnitude: a gentle stick push walks slowly instead of
+	# jumping immediately to full surface_walk_speed.
+	var stepped := position_now + move.normalized() * surface_walk_speed * input_strength * delta
 	var target := center + (stepped - center).normalized() * surface_radius
 	global_position += target - position_now
 
@@ -793,6 +809,7 @@ func take_off() -> void:
 	# Flight assumes an upright rig (the play field is a horizontal plane),
 	# so undo whatever tilt walking the sphere left behind.
 	_level_rig()
+	_surface_walk_forward = Vector3.ZERO
 	state = FlightState.FLYING
 	velocity = away * takeoff_speed
 	_takeoff_grace = takeoff_grace_seconds

@@ -277,7 +277,7 @@ func _draw_black_holes(plate: Vector2) -> void:
 
 func _draw_destination(plate: Vector2) -> void:
 	var destination := Vector3(200.0, 200.0, 10.0)
-	var arrival_radius := 3.0
+	var arrival_radius := 5.0
 	if _flight != null:
 		var value: Variant = _flight.get("destination")
 		if value is Vector3:

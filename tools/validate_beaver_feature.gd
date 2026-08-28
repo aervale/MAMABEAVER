@@ -44,6 +44,7 @@ func _run_checks(scene: Node) -> void:
 	if flight == null or director == null or planet == null:
 		_finish()
 		return
+	_check(is_equal_approx(float(flight.get("arrival_radius")), 5.0), "MIT arrival radius is 5 m")
 
 	# --- spawning ---
 	var total := int(director.call("get_total_count"))
@@ -157,6 +158,23 @@ func _run_checks(scene: Node) -> void:
 		"walking leaves the flight plane — you can climb the sphere (y=%.2f)" % after_walk.y
 	)
 	_check(int(flight.get("state")) == STATE_LANDED, "walking does not leave the LANDED state")
+
+	# Analog input must stay analog. The former implementation normalized
+	# every non-zero move, making a gentle push travel at full walking speed.
+	var saved_rig_transform := (flight as Node3D).global_transform
+	flight.set("_surface_walk_forward", Vector3.ZERO)
+	var gentle_start: Vector3 = flight.call("get_spacecraft_world_position")
+	flight.call("_walk_on_surface", 0.1, Vector2(0.0, 0.25))
+	var gentle_distance := gentle_start.distance_to(flight.call("get_spacecraft_world_position"))
+	(flight as Node3D).global_transform = saved_rig_transform
+	flight.set("_surface_walk_forward", Vector3.ZERO)
+	var full_start: Vector3 = flight.call("get_spacecraft_world_position")
+	flight.call("_walk_on_surface", 0.1, Vector2(0.0, 1.0))
+	var full_distance := full_start.distance_to(flight.call("get_spacecraft_world_position"))
+	_check(
+		full_distance > gentle_distance * 3.5,
+		"surface walking preserves stick magnitude (gentle %.3f, full %.3f)" % [gentle_distance, full_distance]
+	)
 
 	# Walking in every direction must never break the sphere constraint.
 	for dir in [Vector2(1, 0), Vector2(-1, 0), Vector2(0, -1), Vector2(0.7, 0.7)]:
