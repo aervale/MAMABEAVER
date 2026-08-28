@@ -79,7 +79,9 @@ altitude (`√(R² − dz²)`).
 | `beaver_director.gd` / `beaver.gd` | Beaver spawning/mission state; one collectible critter. |
 | `magic_bolt.gd` | Gravity-nudged collection projectile (landed-only). |
 | `surface_dust.gd` | Self-freeing one-shot dust puff (landing + footsteps). |
-| `black_hole_lens.gdshader` | Screen-space gravitational lensing shell. |
+| `black_hole_lens.gdshader` | Screen-space gravitational lensing shell (layer 1). |
+| `black_hole_cloud.gdshader` | Translucent swirling gas cloud (layer 2). |
+| `flight_hud_graphic.gd` / `vr_hud_presenter.gd` | Graphical in-headset status gauges (replaced the text Label3D). |
 | `vr_minimap_presenter.gd` | SubViewport → head-locked quad for VR map. |
 | `desktop_orbit_camera.gd` | No-headset orbit camera. |
 | `starfield_sky.gdshader` | Procedural deep-space sky (stars + nebula band). |
@@ -136,6 +138,18 @@ things silently): `XROrigin3D`, `MoonExhibit`, `BlackHoleExhibit`, `SceneryExhib
   `LANDED`, where `get_spacecraft_world_position()` returns the true height
   so you can stand anywhere on a planet. Minimap collision circles always
   use the flight plane, not the walker's height.
+- **Transparent shells need a falloff.** A sphere with constant alpha
+  renders as a flat disc with a hard rim, not a glow — that bug produced a
+  grey bubble over MIT and hard-edged black-hole clouds. Fade by view angle
+  (`dot(NORMAL, VIEW)`) or use a radial-gradient billboard instead.
+- Wide `pow()` lobes in the sky shader blanket everything: the sun dust veil
+  at exponent 3 washed half the sky orange and buried the starfield. It is
+  exponent 9 now — keep sun effects tight.
+- Each black hole is TWO layers: the opaque lensed core/photon ring plus a
+  translucent `black_hole_cloud.gdshader` gas shell at the same position.
+- Bolts fly straight (`bolt_gravity_scale = 0`) and ignore the planet the
+  shooter stands on, so surface-skimming shots reach beavers; only a shot
+  aimed squarely into the ground (dot > 0.85) is refused.
 - Black holes are procedural + `black_hole_lens.gdshader`. The shell uses
   `cull_disabled` plus a `FRONT_FACING`/inside test: with normal back-face
   culling the lensing silently vanished whenever the camera was inside the

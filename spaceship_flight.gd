@@ -132,7 +132,7 @@ const MAP_EXPAND_BUTTONS: Array[StringName] = [
 
 @export_group("Landing & beavers")
 ## Touch a planet below this speed to land instead of crash.
-@export_range(0.5, 15.0, 0.5) var landing_speed_threshold := 4.0
+@export_range(0.5, 15.0, 0.5) var landing_speed_threshold := 8.0
 @export_range(1.0, 15.0, 0.5) var takeoff_speed := 5.0
 ## After takeoff, the departed planet is ignored this long (no re-collide).
 @export_range(0.1, 3.0, 0.05) var takeoff_grace_seconds := 0.75
@@ -140,7 +140,9 @@ const MAP_EXPAND_BUTTONS: Array[StringName] = [
 @export_range(0.5, 5.0, 0.1) var bolt_hit_radius := 2.0
 ## How much of the gravity field bends a bolt. Low = straight shots that
 ## still visibly curve near planets; 1.0 made close-range aiming a lottery.
-@export_range(0.0, 1.0, 0.05) var bolt_gravity_scale := 0.35
+## 0 = perfectly straight shots. Gravity-curved bolts made close-range
+## aiming feel arbitrary, so the field no longer touches them.
+@export_range(0.0, 1.0, 0.05) var bolt_gravity_scale := 0.0
 @export_range(1, 8, 1) var max_live_bolts := 3
 ## Speed you stroll around a planet's surface while landed.
 @export_range(0.5, 12.0, 0.5) var surface_walk_speed := 3.5
@@ -641,9 +643,9 @@ func _land_on(planet: Node3D, collision_distance: float, impact_speed: float) ->
 	_spawn_dust(
 		get_spacecraft_world_position(),
 		planet,
-		int(lerpf(18.0, 46.0, clampf(impact_speed / landing_speed_threshold, 0.0, 1.0))),
-		lerpf(2.0, 4.5, clampf(impact_speed / landing_speed_threshold, 0.0, 1.0)),
-		0.95
+		int(lerpf(12.0, 26.0, clampf(impact_speed / landing_speed_threshold, 0.0, 1.0))),
+		lerpf(1.6, 3.2, clampf(impact_speed / landing_speed_threshold, 0.0, 1.0)),
+		0.8
 	)
 	_update_predicted_flow()
 	_update_status()
@@ -697,7 +699,7 @@ func _walk_on_surface(delta: float, input: Vector2) -> void:
 
 	if _walk_dust_cooldown <= 0.0:
 		_walk_dust_cooldown = 0.22
-		_spawn_dust(get_spacecraft_world_position(), _landed_planet, 6, 1.1, 0.55)
+		_spawn_dust(get_spacecraft_world_position(), _landed_planet, 3, 0.8, 0.45)
 
 
 ## Puff of surface dust, thrown along the planet's outward normal.
@@ -755,7 +757,7 @@ func take_off() -> void:
 	_takeoff_grace = takeoff_grace_seconds
 	_prediction_elapsed = 0.0
 	_pulse_controllers(0.25, 0.15)
-	_spawn_dust(launch_from, _landed_planet, 30, 3.5, 0.8)
+	_spawn_dust(launch_from, _landed_planet, 18, 2.6, 0.7)
 	print("SpacecraftFlight|INFO: launched from %s back into the flight plane" % (
 		_landed_planet.name if _landed_planet != null else "?"
 	))
@@ -967,10 +969,20 @@ func _try_fire(origin: Vector3, direction: Vector3) -> void:
 		if is_instance_valid(oldest):
 			oldest.queue_free()
 
+	# You stand ON a planet to shoot, and the beavers stand on it too, so a
+	# bolt skimming the surface must NOT be swallowed by that planet — only
+	# a shot aimed squarely into the ground counts as hitting it.
+	if _landed_planet != null:
+		var into_surface := (_landed_planet.global_position - origin).normalized()
+		if direction.normalized().dot(into_surface) > 0.85:
+			_set_banner("AIMED INTO THE SURFACE", 1.2)
+			return
+
 	var bolt := MagicBoltScript.new() as MagicBolt
 	bolt.velocity = direction.normalized() * bolt_speed
 	bolt.hit_radius = bolt_hit_radius
 	bolt.gravity_scale = bolt_gravity_scale
+	bolt.ignored_planet = _landed_planet
 	bolt.setup(self, _beaver_director, _obstacles_root, _black_holes_root, play_area_min, play_area_max)
 	get_tree().current_scene.add_child(bolt)
 	bolt.global_position = origin

@@ -19,21 +19,24 @@
 # hole (captures()), or connects with an IDLE beaver — which the director
 # then tractors to the ship.
 #
-# Visual: small emissive orb + a short fading trail of ghost spheres,
-# all unshaded; one low-range OmniLight so landings get a light show
-# (bounded: <= 3 bolts alive).
+# Visual (per the reference art): a hot white-blue core inside a translucent
+# cyan envelope stretched along its flight path, trailing a spray of sparks,
+# and bursting into a splash when it lands. One low-range OmniLight each,
+# bounded by max_live_bolts (<= 3 alive).
 # =============================================================================
 extends Node3D
 class_name MagicBolt
 
 const MAX_LIFETIME := 8.0
-const TRAIL_LENGTH := 4
-const TRAIL_SPACING_SECONDS := 0.04
+const SurfaceDustScript = preload("res://surface_dust.gd")
 
 var velocity := Vector3.ZERO
 var hit_radius := 2.0
 ## Fraction of real gravity applied to the bolt. 0 = laser, 1 = full field.
-var gravity_scale := 0.35
+var gravity_scale := 0.0
+## The planet the shooter is standing on. Skipped by the splash test so
+## surface-skimming shots reach the beavers instead of being absorbed.
+var ignored_planet: Node3D = null
 
 var _flight: Node3D
 var _director: Node3D
@@ -43,9 +46,8 @@ var _play_min := Vector2(-20.0, -20.0)
 var _play_max := Vector2(220.0, 220.0)
 
 var _lifetime := 0.0
-var _trail: Array[MeshInstance3D] = []
-var _trail_positions: Array[Vector3] = []
-var _trail_timer := 0.0
+var _head: MeshInstance3D
+var _shell: MeshInstance3D
 
 
 ## Called by the flight controller right after instantiation, before add_child.
@@ -66,54 +68,126 @@ func setup(
 
 
 func _ready() -> void:
+	# Look, per the reference art: a hot white-blue core wrapped in a
+	# translucent cyan shell, stretched along its flight path like a comet,
+	# with a spray of sparks trailing behind it. Not a plain sphere.
 	var core_material := StandardMaterial3D.new()
 	core_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	core_material.albedo_color = Color(0.75, 0.95, 1.0)
+	core_material.albedo_color = Color(0.92, 0.99, 1.0)
 	core_material.emission_enabled = true
-	core_material.emission = Color(0.35, 0.8, 1.0)
-	core_material.emission_energy_multiplier = 4.0
+	core_material.emission = Color(0.45, 0.9, 1.0)
+	core_material.emission_energy_multiplier = 6.0
 
 	var core_mesh := SphereMesh.new()
-	core_mesh.radius = 0.12
-	core_mesh.height = 0.24
+	core_mesh.radius = 0.13
+	core_mesh.height = 0.26
 	core_mesh.radial_segments = 10
 	core_mesh.rings = 5
 	core_mesh.material = core_material
 
-	var core := MeshInstance3D.new()
-	core.name = "BoltCore"
-	core.mesh = core_mesh
-	core.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	add_child(core)
+	_head = MeshInstance3D.new()
+	_head.name = "BoltCore"
+	_head.mesh = core_mesh
+	_head.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(_head)
+
+	# Translucent outer envelope, stretched backwards into a teardrop.
+	var shell_material := StandardMaterial3D.new()
+	shell_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	shell_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	shell_material.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	shell_material.albedo_color = Color(0.25, 0.75, 1.0, 0.5)
+	shell_material.cull_mode = BaseMaterial3D.CULL_DISABLED
+
+	var shell_mesh := SphereMesh.new()
+	shell_mesh.radius = 0.26
+	shell_mesh.height = 0.52
+	shell_mesh.radial_segments = 12
+	shell_mesh.rings = 6
+	shell_mesh.material = shell_material
+
+	_shell = MeshInstance3D.new()
+	_shell.name = "BoltShell"
+	_shell.mesh = shell_mesh
+	_shell.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	# Squashed sideways and stretched back: a comet head, not a ball.
+	_shell.scale = Vector3(0.75, 0.75, 2.6)
+	add_child(_shell)
 
 	var light := OmniLight3D.new()
 	light.name = "BoltLight"
 	light.light_color = Color(0.4, 0.8, 1.0)
-	light.light_energy = 1.4
+	light.light_energy = 1.6
 	light.omni_range = 5.0
 	light.shadow_enabled = false
 	add_child(light)
 
-	# Trail: ghost spheres re-anchored to recent positions. They're children
-	# of the SCENE (top_level) so they lag behind in world space.
-	for index in TRAIL_LENGTH:
-		var ghost_material := core_material.duplicate() as StandardMaterial3D
-		ghost_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-		var fade := 1.0 - float(index + 1) / float(TRAIL_LENGTH + 1)
-		ghost_material.albedo_color = Color(0.55, 0.85, 1.0, 0.4 * fade)
-		ghost_material.emission_energy_multiplier = 2.0 * fade
-		var ghost_mesh := SphereMesh.new()
-		ghost_mesh.radius = 0.08 * (0.5 + 0.5 * fade)
-		ghost_mesh.height = ghost_mesh.radius * 2.0
-		ghost_mesh.radial_segments = 8
-		ghost_mesh.rings = 4
-		ghost_mesh.material = ghost_material
-		var ghost := MeshInstance3D.new()
-		ghost.mesh = ghost_mesh
-		ghost.top_level = true
-		ghost.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		add_child(ghost)
-		_trail.append(ghost)
+	_build_spark_trail()
+
+
+## Spray of sparks streaming off the head, matching the speckle in the
+## reference art. World-space so they hang in the air as the bolt moves on.
+func _build_spark_trail() -> void:
+	var process := ParticleProcessMaterial.new()
+	process.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_SPHERE
+	process.emission_sphere_radius = 0.12
+	process.direction = Vector3.ZERO
+	process.spread = 180.0
+	process.initial_velocity_min = 0.4
+	process.initial_velocity_max = 1.6
+	process.gravity = Vector3.ZERO
+	process.damping_min = 1.0
+	process.damping_max = 3.0
+	process.scale_min = 0.4
+	process.scale_max = 1.0
+
+	var gradient := Gradient.new()
+	gradient.set_color(0, Color(0.85, 0.98, 1.0, 0.9))
+	gradient.add_point(0.4, Color(0.35, 0.8, 1.0, 0.6))
+	gradient.set_color(gradient.get_point_count() - 1, Color(0.1, 0.5, 1.0, 0.0))
+	var ramp := GradientTexture1D.new()
+	ramp.gradient = gradient
+	process.color_ramp = ramp
+
+	var spark_material := StandardMaterial3D.new()
+	spark_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	spark_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	spark_material.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	spark_material.vertex_color_use_as_albedo = true
+	spark_material.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
+	spark_material.disable_receive_shadows = true
+
+	var spark_mesh := QuadMesh.new()
+	spark_mesh.size = Vector2(0.09, 0.09)
+	spark_mesh.material = spark_material
+
+	var sparks := GPUParticles3D.new()
+	sparks.name = "SparkTrail"
+	sparks.amount = 40
+	sparks.lifetime = 0.55
+	sparks.local_coords = false
+	sparks.visibility_aabb = AABB(Vector3.ONE * -30.0, Vector3.ONE * 60.0)
+	sparks.process_material = process
+	sparks.draw_pass_1 = spark_mesh
+	sparks.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	sparks.emitting = true
+	add_child(sparks)
+
+
+## Splash burst left behind when the bolt ends, like the reference impact.
+func _burst(color: Color, amount: int) -> void:
+	var dust := SurfaceDustScript.new() as SurfaceDust
+	dust.surface_normal = -velocity.normalized() if velocity.length() > 0.01 else Vector3.UP
+	dust.burst_amount = amount
+	dust.burst_speed = 4.5
+	dust.puff_lifetime = 0.5
+	dust.puff_size = 0.2
+	dust.dust_color = color
+	var scene := get_tree().current_scene
+	if scene == null:
+		return
+	scene.add_child(dust)
+	dust.global_position = global_position
 
 
 func _physics_process(delta: float) -> void:
@@ -129,7 +203,12 @@ func _physics_process(delta: float) -> void:
 		velocity.z += gravity.y * gravity_scale * delta
 	global_position += velocity * delta
 
-	_update_trail(delta)
+	# Point the stretched envelope along the direction of travel.
+	if _shell != null and velocity.length_squared() > 0.001:
+		var forward := velocity.normalized()
+		var reference := Vector3.UP if absf(forward.y) < 0.95 else Vector3.RIGHT
+		_shell.global_basis = Basis().looking_at(forward, reference)
+		_shell.scale = Vector3(0.75, 0.75, 2.6)
 
 	# Out of the play volume?
 	if (
@@ -144,12 +223,13 @@ func _physics_process(delta: float) -> void:
 	if _obstacles_root != null:
 		for child in _obstacles_root.get_children():
 			var planet := child as Node3D
-			if planet == null:
+			if planet == null or planet == ignored_planet:
 				continue
 			var diameter: Variant = planet.get("target_diameter_meters")
 			if diameter == null:
 				continue
 			if global_position.distance_to(planet.global_position) <= float(diameter) * 0.5:
+				_burst(Color(0.5, 0.85, 1.0, 0.5), 16)
 				queue_free()
 				return
 
@@ -168,16 +248,5 @@ func _physics_process(delta: float) -> void:
 		var beaver: Node3D = _director.call("find_beaver_near", global_position, hit_radius)
 		if beaver != null:
 			_director.call("begin_tractor", beaver, _flight)
+			_burst(Color(0.6, 0.95, 1.0, 0.55), 26)
 			queue_free()
-
-
-func _update_trail(delta: float) -> void:
-	_trail_timer += delta
-	if _trail_timer >= TRAIL_SPACING_SECONDS:
-		_trail_timer = 0.0
-		_trail_positions.push_front(global_position)
-		while _trail_positions.size() > TRAIL_LENGTH:
-			_trail_positions.pop_back()
-	for index in _trail.size():
-		if index < _trail_positions.size():
-			_trail[index].global_position = _trail_positions[index]

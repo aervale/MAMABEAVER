@@ -50,7 +50,7 @@ uniform vec3 core_direction = vec3(0.9, -0.1, -0.42);
 
 // Sun-facing dust: warm haze scattered toward the DirectionalLight.
 uniform vec3 sun_dust_color : source_color = vec3(0.9, 0.45, 0.16);
-uniform float sun_dust_strength : hint_range(0.0, 2.0) = 0.55;
+uniform float sun_dust_strength : hint_range(0.0, 2.0) = 0.5;
 uniform vec3 sun_halo_color : source_color = vec3(1.0, 0.72, 0.4);
 
 float hash13(vec3 p) {
@@ -156,7 +156,10 @@ void sky() {
 		if (LIGHT0_ENABLED) {
 			float sun_amount = clamp(dot(dir, normalize(LIGHT0_DIRECTION)), 0.0, 1.0);
 			float veil = 0.55 + 0.45 * fbm(warped_dir * 4.7 + 7.0);
-			gas += sun_dust_color * pow(sun_amount, 3.0) * veil * sun_dust_strength;
+			// Exponent 9, not 3: a broad lobe washed HALF THE SKY orange and
+			// buried the starfield, which read as the background cutting
+			// off. The dust now hugs the sun instead of blanketing space.
+			gas += sun_dust_color * pow(sun_amount, 9.0) * veil * sun_dust_strength;
 		}
 
 		COLOR = gas;
@@ -165,10 +168,12 @@ void sky() {
 		// ---- crisp full-res pass: nebula readback + stars + dither ----
 		vec3 color = base_color + HALF_RES_COLOR.rgb;
 
-		vec3 stars = star_layer(dir, 26.0, 0.94, 0.35) * 1.4;
-		stars += star_layer(dir, 55.0, 0.88, 0.42) * 0.55;
-		stars += star_layer(dir, 90.0, 0.82, 0.5) * 0.22 * (0.4 + band * 1.6);
-		stars += star_layer(dir, 140.0, 0.78, 0.55) * 0.10 * (0.2 + band * 2.2);
+		// Tighter radii + higher grid frequencies: the previous stars were fat
+		// enough to read as pixel blocks rather than points of light.
+		vec3 stars = star_layer(dir, 62.0, 0.955, 0.17) * 1.25;
+		stars += star_layer(dir, 118.0, 0.9, 0.2) * 0.5;
+		stars += star_layer(dir, 190.0, 0.85, 0.24) * 0.22 * (0.4 + band * 1.6);
+		stars += star_layer(dir, 280.0, 0.8, 0.27) * 0.1 * (0.2 + band * 2.2);
 		color += stars * star_brightness;
 
 		// Sun halo + core disc, crisp so they must be full-res. The core

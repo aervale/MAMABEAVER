@@ -18,7 +18,9 @@ var burst_amount := 24
 var burst_speed := 3.0
 var puff_lifetime := 0.9
 var puff_size := 0.35
-var dust_color := Color(0.72, 0.66, 0.58, 0.55)
+## Deliberately low alpha: at 0.55 the landing burst whited out the view
+## and you could not see what you were shooting at.
+var dust_color := Color(0.72, 0.66, 0.58, 0.16)
 ## Direction the dust is thrown (usually the planet's surface normal).
 var surface_normal := Vector3.UP
 
@@ -36,8 +38,8 @@ func _ready() -> void:
 	process.gravity = Vector3.ZERO
 	process.damping_min = 1.5
 	process.damping_max = 3.5
-	process.scale_min = 0.6
-	process.scale_max = 1.6
+	process.scale_min = 0.45
+	process.scale_max = 1.1
 	# Grow slightly as it fades, like a real dust cloud expanding.
 	var scale_curve := Curve.new()
 	scale_curve.add_point(Vector2(0.0, 0.5))

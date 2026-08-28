@@ -62,7 +62,8 @@ func _start_xr_mode() -> void:
 	var ship_marker := get_node_or_null("XROrigin3D/ShipMarker") as MeshInstance3D
 	if ship_marker != null:
 		ship_marker.visible = false
-	var flight_hud := get_node_or_null("XROrigin3D/XRCamera3D/FlightHUD") as Label3D
+	# Graphical status strip (vr_hud_presenter.gd), headset only.
+	var flight_hud := get_node_or_null("XROrigin3D/XRCamera3D/FlightHUD") as Node3D
 	if flight_hud != null:
 		flight_hud.visible = true
 	var vr_minimap := get_node_or_null("XROrigin3D/XRCamera3D/VRMiniMap") as Node3D
@@ -92,7 +93,7 @@ func _start_desktop_mode() -> void:
 	var ship_marker := get_node_or_null("XROrigin3D/ShipMarker") as MeshInstance3D
 	if ship_marker != null:
 		ship_marker.visible = true
-	var flight_hud := get_node_or_null("XROrigin3D/XRCamera3D/FlightHUD") as Label3D
+	var flight_hud := get_node_or_null("XROrigin3D/XRCamera3D/FlightHUD") as Node3D
 	if flight_hud != null:
 		flight_hud.visible = false
 	var vr_minimap := get_node_or_null("XROrigin3D/XRCamera3D/VRMiniMap") as Node3D

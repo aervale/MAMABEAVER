@@ -20,6 +20,7 @@
 [ext_resource type="Shader" path="res://starfield_sky.gdshader" id="20_starsky"]
 [ext_resource type="Script" path="res://ambient_dust.gd" id="21_dust"]
 [ext_resource type="Script" path="res://beaver_director.gd" id="22_beavers"]
+[ext_resource type="Script" path="res://vr_hud_presenter.gd" id="23_vrhud"]
 
 [sub_resource type="StandardMaterial3D" id="Material_ship_marker"]
 albedo_color = Color(0.08, 0.75, 1, 1)
@@ -42,14 +43,14 @@ sky_material = SubResource("ShaderMaterial_starsky")
 background_mode = 2
 sky = SubResource("Sky_oqsj0")
 ambient_light_source = 2
-ambient_light_color = Color(0.2, 0.24, 0.38, 1)
-ambient_light_energy = 0.5
+ambient_light_color = Color(0.26, 0.3, 0.42, 1)
+ambient_light_energy = 0.75
 reflected_light_source = 2
 fog_enabled = true
 fog_light_color = Color(0.78, 0.5, 0.3, 1)
 fog_light_energy = 1.0
 fog_sun_scatter = 0.4
-fog_density = 0.0012
+fog_density = 0.0004
 fog_sky_affect = 0.0
 glow_enabled = true
 glow_intensity = 0.55
@@ -83,7 +84,6 @@ right_controller_path = NodePath("XRControllerRight")
 flight_camera_path = NodePath("XRCamera3D")
 obstacles_root_path = NodePath("../MoonExhibit")
 black_holes_root_path = NodePath("../BlackHoleExhibit")
-vr_status_path = NodePath("XRCamera3D/FlightHUD")
 desktop_status_path = NodePath("../DesktopHUD/Panel/Content/Mode")
 play_area_min = Vector2(-20, -20)
 play_area_max = Vector2(220, 220)
@@ -91,16 +91,9 @@ beaver_director_path = NodePath("../BeaverExhibit")
 
 [node name="XRCamera3D" type="XRCamera3D" parent="XROrigin3D" unique_id=807774865]
 
-[node name="FlightHUD" type="Label3D" parent="XROrigin3D/XRCamera3D" unique_id=1402147676]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.32, -1.5)
-pixel_size = 0.0018
-no_depth_test = true
-modulate = Color(0.7, 0.9, 1, 0.9)
-text = "POS 0.0, 0.0   ALT 10
-SPD 0.0   GRAV 0.0   FUEL 100/100
-GOAL 200, 200"
-font_size = 28
-outline_size = 6
+[node name="FlightHUD" type="Node3D" parent="XROrigin3D/XRCamera3D" unique_id=1402147676]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.34, -1.4)
+script = ExtResource("23_vrhud")
 
 [node name="VRMiniMap" type="Node3D" parent="XROrigin3D/XRCamera3D" unique_id=49479785]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.52, 0.26, -1.5)
@@ -361,12 +354,12 @@ environment = SubResource("Environment_lts4m")
 [node name="SunLight" type="DirectionalLight3D" parent="." unique_id=1844096403]
 transform = Transform3D(0.86601907, -0.3535631, 0.35355926, 0, 0.70710295, 0.70711064, -0.500011, -0.61237127, 0.6123646, 0, 2.9986405, 0)
 light_color = Color(1, 0.93, 0.8, 1)
-light_energy = 2.0
+light_energy = 2.2
 shadow_enabled = true
 shadow_bias = 0.03
 shadow_normal_bias = 1.0
 directional_shadow_mode = 0
-directional_shadow_max_distance = 320.0
+directional_shadow_max_distance = 700.0
 
 [node name="Passthrough" type="Node" parent="." unique_id=1290157622]
 script = ExtResource("6_pass")

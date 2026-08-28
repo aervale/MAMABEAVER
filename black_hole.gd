@@ -35,6 +35,7 @@ class_name GameplayBlackHole
 
 const DISK_SHADER := preload("res://black_hole_disk.gdshader")
 const LENS_SHADER := preload("res://black_hole_lens.gdshader")
+const CLOUD_SHADER := preload("res://black_hole_cloud.gdshader")
 
 @export_group("Imported model")
 @export var model_scene: PackedScene
@@ -52,6 +53,13 @@ const LENS_SHADER := preload("res://black_hole_lens.gdshader")
 ## Shell size as a multiple of capture_radius; also how far the smear reaches.
 @export_range(2.0, 12.0, 0.5) var lens_falloff_radii := 3.5
 @export_range(0.0, 3.0, 0.05) var lens_strength := 1.0
+
+@export_group("Gas cloud")
+## Second layer: a translucent swirling cloud at the same position as the
+## lens. One asset alone read as a flat sticker; the pair gives depth.
+@export var enable_gas_cloud := true
+@export_range(1.2, 6.0, 0.1) var cloud_radius_multiplier := 2.6
+@export_range(0.0, 1.5, 0.05) var cloud_density := 0.16
 
 @export_group("Visuals")
 @export_range(4.0, 20.0, 0.5) var accretion_disk_radius := 9.0
@@ -109,11 +117,13 @@ func _build_visuals() -> void:
 
 	if enable_lensing:
 		_build_lens_shell()
+	if enable_gas_cloud:
+		_build_gas_cloud()
 
 	var glow := OmniLight3D.new()
 	glow.name = "AccretionGlow"
-	glow.light_color = Color(1.0, 0.28, 0.06)
-	glow.light_energy = 2.5
+	glow.light_color = Color(1.0, 0.42, 0.12)
+	glow.light_energy = 1.6
 	glow.omni_range = accretion_disk_radius * 1.6
 	glow.shadow_enabled = false
 	_generated_root.add_child(glow)
@@ -130,6 +140,7 @@ func _build_lens_shell() -> void:
 	material.set_shader_parameter("shell_world_radius", capture_radius * lens_falloff_radii)
 	material.set_shader_parameter("lens_falloff_radii", lens_falloff_radii)
 	material.set_shader_parameter("lens_strength", lens_strength)
+	material.set_shader_parameter("photon_ring_energy", 3.4)
 	# Draw after the accretion disk so the disk is itself lensed.
 	material.render_priority = 4
 
@@ -143,6 +154,27 @@ func _build_lens_shell() -> void:
 	var shell := _add_mesh("LensShell", mesh, Vector3.ZERO, _generated_root)
 	# Never cull it early: the shell is big and usually straddles the frustum.
 	shell.extra_cull_margin = mesh.radius
+
+
+## Layer two: translucent gas, larger than the lens shell. cull_front in
+## the shader means we see its FAR wall, so the cloud always reads as
+## something you are looking into rather than a solid shell.
+func _build_gas_cloud() -> void:
+	var material := ShaderMaterial.new()
+	material.shader = CLOUD_SHADER
+	material.set_shader_parameter("density", cloud_density)
+	# Drawn before the lens so the lens bends the cloud too.
+	material.render_priority = 1
+
+	var mesh := SphereMesh.new()
+	mesh.radius = capture_radius * cloud_radius_multiplier
+	mesh.height = mesh.radius * 2.0
+	mesh.radial_segments = 28
+	mesh.rings = 14
+	mesh.material = material
+
+	var cloud := _add_mesh("GasCloud", mesh, Vector3.ZERO, _generated_root)
+	cloud.extra_cull_margin = mesh.radius
 
 
 func _build_imported_visual() -> void:

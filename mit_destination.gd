@@ -131,14 +131,62 @@ func _build_model() -> void:
 	beacon_mesh.material = _beacon
 	_add_mesh("GoalBeacon", beacon_mesh, Vector3(0, 10.88, 0))
 
+	# The dome sits at the far corner of the field and was reading as a dim
+	# grey lump. A soft white halo plus a wide warm light makes it the
+	# landmark it needs to be, and the light is what actually illuminates
+	# the stonework — the halo itself is unshaded and lights nothing.
+	# A BILLBOARD with a radial gradient, not sphere shells: a shell of
+	# constant alpha has no falloff, so it renders as a flat grey disc with
+	# a hard rim (it looked like a bubble had been pasted over the dome).
+	# The gradient fades to nothing at its edge, so this reads as light.
+	var glow_gradient := Gradient.new()
+	glow_gradient.set_color(0, Color(1.0, 0.98, 0.92, 0.85))
+	glow_gradient.add_point(0.25, Color(0.9, 0.94, 1.0, 0.34))
+	glow_gradient.add_point(0.55, Color(0.7, 0.85, 1.0, 0.08))
+	glow_gradient.set_color(glow_gradient.get_point_count() - 1, Color(0.6, 0.8, 1.0, 0.0))
+
+	var glow_texture := GradientTexture2D.new()
+	glow_texture.gradient = glow_gradient
+	glow_texture.fill = GradientTexture2D.FILL_RADIAL
+	glow_texture.fill_from = Vector2(0.5, 0.5)
+	glow_texture.fill_to = Vector2(1.0, 0.5)
+	glow_texture.width = 128
+	glow_texture.height = 128
+
+	var glow_material := StandardMaterial3D.new()
+	glow_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	glow_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	glow_material.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	glow_material.albedo_texture = glow_texture
+	glow_material.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+	glow_material.cull_mode = BaseMaterial3D.CULL_DISABLED
+	glow_material.disable_receive_shadows = true
+
+	var glow_mesh := QuadMesh.new()
+	glow_mesh.size = Vector2(46.0, 46.0)
+	glow_mesh.material = glow_material
+
+	var glow := _add_mesh("GoalGlow", glow_mesh, Vector3(0, 7.0, 0))
+	glow.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	glow.extra_cull_margin = 46.0
+
 	var goal_light := OmniLight3D.new()
 	goal_light.name = "GoalLight"
-	goal_light.position = Vector3(0, 10.6, 0)
-	goal_light.light_color = Color(0.9, 0.12, 0.18)
-	goal_light.light_energy = 3.0
-	goal_light.omni_range = 8.0
+	goal_light.position = Vector3(0, 9.0, 0)
+	goal_light.light_color = Color(1.0, 0.96, 0.92)
+	goal_light.light_energy = 6.0
+	goal_light.omni_range = 34.0
 	goal_light.shadow_enabled = false
 	_model_root.add_child(goal_light)
+
+	var beacon_light := OmniLight3D.new()
+	beacon_light.name = "BeaconLight"
+	beacon_light.position = Vector3(0, 10.9, 0)
+	beacon_light.light_color = Color(1.0, 0.25, 0.3)
+	beacon_light.light_energy = 3.0
+	beacon_light.omni_range = 10.0
+	beacon_light.shadow_enabled = false
+	_model_root.add_child(beacon_light)
 
 
 func _create_materials() -> void:

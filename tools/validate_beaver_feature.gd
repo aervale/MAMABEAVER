@@ -95,8 +95,23 @@ func _run_checks(scene: Node) -> void:
 	_check(String(flight.call("get_predicted_flow_result")) == "LANDED", "predictor reports LANDED")
 
 	# --- firing is landed-only, capped, and spawns MagicBolt nodes ---
-	flight.call("_try_fire", flight.call("get_spacecraft_world_position"), Vector3(1, 0, 0))
-	_check(_count_bolts(scene) == 1, "trigger fires exactly one bolt while landed")
+	# Tangential shot along the surface: this is the normal case, and the
+	# planet you stand on must not swallow it.
+	var muzzle: Vector3 = flight.call("get_spacecraft_world_position")
+	flight.call("_try_fire", muzzle, Vector3(0, 0, 1))
+	_check(_count_bolts(scene) == 1, "a surface-skimming shot fires while landed")
+	var skimmer: Node3D = null
+	for child in scene.get_children():
+		if child is MagicBolt:
+			skimmer = child
+	_check(
+		skimmer != null and (skimmer as MagicBolt).ignored_planet == planet,
+		"the bolt ignores the planet the player is standing on"
+	)
+	# Straight down into the rock is the one aim that gets refused.
+	var into := (planet.global_position - muzzle).normalized()
+	flight.call("_try_fire", muzzle, into)
+	_check(_count_bolts(scene) == 1, "aiming into the surface is refused, not absorbed")
 
 	# Simulate a real desktop right-click through _unhandled_input.
 	var click := InputEventMouseButton.new()
@@ -154,8 +169,11 @@ func _run_checks(scene: Node) -> void:
 	_check(clearance > 5.0, "takeoff exits clear of the planet cross-section (%.2f m)" % clearance)
 	await physics_frame
 	_check(int(flight.get("state")) == STATE_FLYING, "takeoff grace prevents instant re-collision")
+	# Firing in flight must add nothing (an absolute count is wrong here:
+	# earlier landed shots are legitimately still in the air).
+	var bolts_before := _count_bolts(scene)
 	flight.call("_try_fire", Vector3.ZERO, Vector3(1, 0, 0))
-	_check(_count_bolts(scene) <= 1, "cannot fire while flying")
+	_check(_count_bolts(scene) == bolts_before, "cannot fire while flying")
 
 	# --- impact warning fires on a fast approach, stays quiet on a slow one ---
 	flight.call("reset_flight")
