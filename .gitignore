@@ -4,6 +4,17 @@
 # Android build template
 /android/
 
+# Local export artifacts
+/build/
+
+# Source archives are kept in the manual-rebuild bundle, not in this project.
+/*.zip
+
+# Superseded Moon extraction layouts; the active assets live in /source/.
+/moon/
+/moon.fbx
+/moon.fbx.import
+
 # keystore
 export_credentials.cfg
 

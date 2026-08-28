@@ -35,8 +35,11 @@ lights_and_shadows/directional_shadow/soft_shadow_filter_quality.mobile=2
 
 [xr]
 
-openxr/enabled=true
 openxr/extensions/hand_tracking=true
 openxr/extensions/hand_tracking_unobstructed_data_source=true
 shaders/enabled=true
+#AvoidblockingnormalmacOSpreviewwhileGodotlooksforanOpenXRruntime#thatisnotinstalled.XRremainsautomaticonstandaloneQuest/Androidand#desktopplatformsthatcommonlyhostanOpenXRruntime.openxr/enabled=false
+openxr/enabled.android=true
+openxr/enabled.windows=true
+openxr/enabled.linux=true
 openxr/extensions/meta/passthrough=true

@@ -41,6 +41,9 @@ func _ready() -> void:
 
 	for path in hide_in_passthrough:
 		var node := get_node_or_null(path) as Node3D
+		if node == null:
+			push_warning("XRPassthrough|WARN: invalid hide path: %s" % path)
+			continue
 		_hidden.append(node)
 		_hidden_was_visible.append(node.visible)
 

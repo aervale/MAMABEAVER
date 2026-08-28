@@ -23,8 +23,17 @@ func _ready() -> void:
 
 func _attach(controller_path: NodePath, model: PackedScene) -> void:
 	var controller := get_node_or_null(controller_path) as XRController3D
+	if controller == null:
+		push_warning("XRControllerVisuals|WARN: controller path is invalid: %s" % controller_path)
+		return
+	if model == null:
+		push_warning("XRControllerVisuals|WARN: no model assigned for %s" % controller.name)
+		return
 
 	var instance := model.instantiate() as Node3D
+	if instance == null:
+		push_warning("XRControllerVisuals|WARN: controller model root must be Node3D")
+		return
 
 	instance.name = "ControllerModel"
 	instance.position = model_offset
