@@ -1,3 +1,9 @@
+# =============================================================================
+# xr_visuals.gd — instantiates the Quest Touch Plus controller models (GLB
+# files in models/) as children of the left/right XRController3D nodes so the
+# tracked controllers are visible in-headset. Purely visual; controller input
+# is read in spaceship_flight.gd.
+# =============================================================================
 extends Node3D
 class_name XRControllerVisuals
 

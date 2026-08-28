@@ -1,3 +1,9 @@
+// Procedural accretion-disk shader for the FALLBACK black-hole visual
+// (black_hole.gd builds this only when no imported model is assigned).
+// Drawn on a flat PlaneMesh: fragments outside the [inner_radius, 1] ring in
+// UV space are discarded, and a TIME-animated spiral plus fine radial bands
+// fake swirling hot gas. Unshaded + additive blend so it glows unlit;
+// depth_draw_never keeps the transparent disk from occluding itself.
 shader_type spatial;
 render_mode unshaded, cull_disabled, blend_add, depth_draw_never;
 

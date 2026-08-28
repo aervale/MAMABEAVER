@@ -1,3 +1,23 @@
+# =============================================================================
+# black_hole.gd — a gameplay black hole (the BlackHoleNN nodes under
+# BlackHoleExhibit in main.tscn).
+#
+# PHYSICS CONTRACT consumed by spaceship_flight.gd via duck typing:
+#   get_gravity_acceleration_at(world_pos) -> Vector3
+#       Softened inverse-square pull a = mu / (d^2 + softening^2), capped at
+#       maximum_acceleration so a grazing pass stays playable instead of
+#       slingshotting to infinity.
+#   captures(world_pos, body_radius) -> bool
+#       True inside capture_radius (+ ship radius) => instant "CAPTURED" loss.
+#
+# VISUALS are built entirely in code at _ready() (nothing hand-placed):
+# either the imported Sketchfab model — normalized to visual_diameter_meters,
+# with its tiny embedded "Planet" mesh hidden — or, when no model is assigned,
+# a procedural event horizon + shader accretion disk + photon rings.
+# @tool makes this run in the editor so the scene viewport shows it too.
+# NOTE: the visuals are purely decorative; only capture_radius and the field
+# parameters affect gameplay.
+# =============================================================================
 @tool
 extends Node3D
 class_name GameplayBlackHole

@@ -1,3 +1,24 @@
+# =============================================================================
+# main.gd — entry point script, attached to the root "Main" node of main.tscn.
+#
+# The whole game is ONE scene that runs two ways, decided once in _ready():
+#   * HEADSET mode — OpenXR initialized before the scene loaded (Quest, or a
+#     desktop OpenXR runtime). The viewport is handed to XR, vsync is disabled
+#     (the XR compositor paces frames instead), and the in-headset HUD
+#     (FlightHUD Label3D) + VRMiniMap are shown.
+#   * DESKTOP mode — no headset found. DesktopCamera (orbit cam) + DesktopHUD
+#     (CanvasLayer with minimap/status) take over; the game stays fully
+#     playable with mouse + WASD.
+#
+# Node paths referenced below are children of Main (see main.tscn):
+#   DesktopCamera, DesktopHUD, XROrigin3D/ShipMarker,
+#   XROrigin3D/XRCamera3D/FlightHUD, XROrigin3D/XRCamera3D/VRMiniMap.
+# Every lookup uses get_node_or_null, so removing a node degrades gracefully
+# instead of crashing.
+#
+# Other scripts can react to mode via the runtime_mode_changed(is_xr) signal
+# instead of probing XRServer themselves.
+# =============================================================================
 extends Node3D
 
 signal runtime_mode_changed(is_xr: bool)

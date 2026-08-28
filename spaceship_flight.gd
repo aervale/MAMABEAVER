@@ -1,3 +1,38 @@
+# =============================================================================
+# spaceship_flight.gd — THE core gameplay script. Attached to XROrigin3D in
+# main.tscn, so "moving the spacecraft" literally means flying the whole XR
+# rig (player head + controllers) through the world.
+#
+# COORDINATE SYSTEM (important — this trips everyone up):
+#   Gameplay is 2D. Logical coordinates are (X, Y, altitude Z), matching
+#   Map_Coordinates_and_Radius.png. Godot worlds are Y-up, so:
+#       logical X            -> world X
+#       logical Y            -> world Z (depth)
+#       logical Z (altitude) -> world Y (height, LOCKED to start_position.z)
+#   _logical_to_world() performs that swap. The ship never changes altitude.
+#
+# WHO IS "THE SHIP": the player's head. get_spacecraft_world_position() uses
+# the XRCamera3D's horizontal position (room-scale walking counts as moving!)
+# with altitude clamped. Collision, arrival and the minimap all use it.
+#
+# DISCOVERING HAZARDS (duck typing — no groups, no signals):
+#   * Planets = children of MoonExhibit exposing a `target_diameter_meters`
+#     property (moon_presenter.gd does). Gravity uses the hackathon formula
+#     a = C * r^3 / d^2 toward the planet center; collision is sphere-vs-point
+#     using that same diameter.
+#   * Black holes = children of BlackHoleExhibit implementing
+#     get_gravity_acceleration_at(pos) and captures(pos, radius)
+#     (black_hole.gd does). Their field is softened: a = mu / (d^2 + s^2).
+#   To add a new hazard type, match either contract — no edits needed here.
+#
+# INPUT: left thumbstick (falls back to right), HEAD-RELATIVE — stick-forward
+# is wherever you are looking, flattened to the horizon. WASD is a
+# desktop-testing convenience. A/X, trigger, or the R key restarts.
+#
+# STATE MACHINE: FLYING -> CRASHED (planet hit / black-hole capture) or
+# ARRIVED (within arrival_radius of destination). End states zero velocity,
+# pulse controller haptics, and wait for a restart press.
+# =============================================================================
 extends XROrigin3D
 class_name SpacecraftFlightController
 
@@ -26,9 +61,9 @@ const RESTART_BUTTONS: Array[StringName] = [
 @export_node_path("Label") var desktop_status_path: NodePath
 
 @export var start_position := Vector3(0.0, 0.0, 10.0)
-@export var destination := Vector3(100.0, 100.0, 10.0)
+@export var destination := Vector3(200.0, 200.0, 10.0)
 @export var play_area_min := Vector2(-20.0, -20.0)
-@export var play_area_max := Vector2(120.0, 120.0)
+@export var play_area_max := Vector2(220.0, 220.0)
 
 @export_group("Gameplay constants")
 ## C in the planet-gravity equation: acceleration = C * radius^3 / distance^2.
@@ -89,6 +124,7 @@ func _physics_process(delta: float) -> void:
 
 		gravity_acceleration = _calculate_gravity_acceleration()
 		velocity += (flight_input * spacecraft_acceleration_a + gravity_acceleration) * delta
+		# Exponential decay keeps drag frame-rate independent.
 		velocity *= exp(-linear_drag * delta)
 		if velocity.length() > flight_speed:
 			velocity = velocity.normalized() * flight_speed
@@ -115,6 +151,7 @@ func reset_flight() -> void:
 
 
 func _move_spacecraft(delta: float) -> void:
+	# velocity is logical (x, y) -> world (x, z); altitude (world Y) stays locked.
 	var next_position := global_position + Vector3(velocity.x, 0.0, velocity.y) * delta
 	if next_position.x < play_area_min.x or next_position.x > play_area_max.x:
 		velocity.x = 0.0

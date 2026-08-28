@@ -1,3 +1,12 @@
+# =============================================================================
+# xr_passthrough.gd — toggles Meta passthrough (see-through mixed reality).
+# Setting `enabled` switches the OpenXR environment blend mode to alpha-blend,
+# makes the viewport + environment background transparent, and hides every
+# node listed in hide_in_passthrough (floor/sky that would paint over the real
+# room). Original state is cached and restored when toggled off. The switch
+# can only apply after the XR session begins; before that the setter just
+# stores the value. Off by default in this project.
+# =============================================================================
 extends Node
 class_name XRPassthrough
 

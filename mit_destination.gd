@@ -1,3 +1,11 @@
+# =============================================================================
+# mit_destination.gd — the goal landmark: a stylized MIT Great Dome assembled
+# from ~50 Godot primitive meshes in code (cheap on Quest, nothing imported).
+# Purely visual: arrival is a distance check in spaceship_flight.gd
+# (destination / arrival_radius), NOT a collision against this model. Placed
+# in main.tscn at the logical (100, 100) destination. @tool: visible in the
+# editor viewport without running the game.
+# =============================================================================
 @tool
 extends Node3D
 class_name MITDestination
@@ -6,6 +14,7 @@ class_name MITDestination
 ## from Godot primitives for predictable Quest performance.
 
 var _model_root: Node3D
+var _rock: StandardMaterial3D
 var _limestone: StandardMaterial3D
 var _shadow: StandardMaterial3D
 var _glass: StandardMaterial3D
@@ -26,6 +35,29 @@ func _build_model() -> void:
 	_model_root = Node3D.new()
 	_model_root.name = "GeneratedMITModel"
 	add_child(_model_root)
+
+	# --- Asteroid base ---
+	# The campus floats in open space (the floor plane was removed), so a
+	# rocky outcrop grounds it visually. Overlapping irregularly scaled
+	# spheres read as one asteroid at Quest-friendly cost. Purely visual,
+	# like the rest of this model.
+	for spec in [
+		# [name, radius, position, non-uniform scale]
+		["AsteroidCore", 6.5, Vector3(0.0, -3.4, 0.0), Vector3(1.0, 0.52, 0.85)],
+		["AsteroidLumpA", 3.0, Vector3(4.6, -2.7, 1.6), Vector3(1.0, 0.7, 1.05)],
+		["AsteroidLumpB", 2.6, Vector3(-4.3, -2.9, -1.7), Vector3(1.1, 0.65, 1.0)],
+		["AsteroidLumpC", 2.0, Vector3(1.4, -3.7, -3.9), Vector3(1.0, 0.8, 1.0)],
+		["AsteroidKeel", 1.7, Vector3(-0.6, -6.2, 0.8), Vector3(0.85, 1.7, 0.85)],
+	]:
+		var rock_radius := spec[1] as float
+		var rock_mesh := SphereMesh.new()
+		rock_mesh.radius = rock_radius
+		rock_mesh.height = rock_radius * 2.0
+		rock_mesh.radial_segments = 20
+		rock_mesh.rings = 10
+		rock_mesh.material = _rock
+		var rock := _add_mesh(spec[0] as String, rock_mesh, spec[2] as Vector3)
+		rock.scale = spec[3] as Vector3
 
 	# Foundation and main pavilion.
 	_add_box("LowerPlinth", Vector3(8.2, 0.45, 5.8), Vector3(0, 0.225, 0), _limestone)
@@ -110,6 +142,11 @@ func _build_model() -> void:
 
 
 func _create_materials() -> void:
+	# Charcoal asteroid rock, kept rough and dark so the lit building pops.
+	_rock = StandardMaterial3D.new()
+	_rock.albedo_color = Color(0.21, 0.195, 0.185)
+	_rock.roughness = 0.96
+
 	_limestone = StandardMaterial3D.new()
 	_limestone.albedo_color = Color(0.78, 0.75, 0.68)
 	_limestone.roughness = 0.78

@@ -1,3 +1,16 @@
+# =============================================================================
+# moon_presenter.gd — displays the Sketchfab Moon FBX, and doubles as a
+# PLANET: every "PlanetNN" node under MoonExhibit runs this script.
+#
+# The exported `target_diameter_meters` is not just visual — spacecraft
+# flight reads it (duck-typed) for both gravity and collision radius, so the
+# sphere you see IS exactly the sphere that kills you. Planet positions and
+# sizes follow Map_Coordinates_and_Radius.png.
+#
+# FBX files arrive with arbitrary source units, so _normalize_model_size()
+# rescales and recenters the model by its merged mesh bounds to hit the
+# target diameter exactly. @tool: also runs in the editor viewport.
+# =============================================================================
 @tool
 extends Node3D
 class_name MoonPresenter

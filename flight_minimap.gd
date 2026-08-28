@@ -1,10 +1,30 @@
+# =============================================================================
+# flight_minimap.gd — top-down XY map drawn entirely with Control._draw()
+# (no child nodes). Used in two places:
+#   1. directly inside DesktopHUD (desktop mode), and
+#   2. rendered into a texture on a head-locked quad by
+#      vr_minimap_presenter.gd (headset mode).
+#
+# It locates the world by ABSOLUTE node names in the current scene:
+#   XROrigin3D (flight controller), MoonExhibit (planets), BlackHoleExhibit.
+# Rename those nodes and the map silently goes blank. All body data is read
+# duck-typed (target_diameter_meters, capture_radius, ...), the same
+# contracts spaceship_flight.gd uses.
+#
+# GEOMETRY NOTE: the ship flies at a fixed altitude, so every circle drawn is
+# a sphere's HORIZONTAL CROSS-SECTION at that altitude, not its full radius:
+#   r_drawn = sqrt(R^2 - dz^2),  dz = |flight altitude - body center height|.
+# A planet that barely pokes into the flight plane draws small — matching
+# exactly where you can actually collide. Screen Y is flipped when drawing
+# because logical Y points up while pixels grow downward.
+# =============================================================================
 extends Control
 class_name FlightMiniMap
 
 ## XY overview shared by the desktop HUD and the in-headset display.
 
 @export var map_min := Vector2(-20.0, -20.0)
-@export var map_max := Vector2(120.0, 120.0)
+@export var map_max := Vector2(220.0, 220.0)
 
 var _flight: Node3D
 var _obstacles: Node3D
@@ -39,8 +59,11 @@ func _draw() -> void:
 
 
 func _draw_grid(map_size: Vector2) -> void:
-	var coordinate := -20.0
-	while coordinate <= 120.01:
+	# Derive lines from the configured bounds so the grid follows play-area
+	# changes; a wider pitch keeps big fields readable on a small map.
+	var step := 20.0 if (map_max.x - map_min.x) <= 160.0 else 40.0
+	var coordinate := ceilf(minf(map_min.x, map_min.y) / step) * step
+	while coordinate <= maxf(map_max.x, map_max.y) + 0.01:
 		var vertical_from := _world_to_map(Vector2(coordinate, map_min.y), map_size)
 		var vertical_to := _world_to_map(Vector2(coordinate, map_max.y), map_size)
 		var horizontal_from := _world_to_map(Vector2(map_min.x, coordinate), map_size)
@@ -50,7 +73,7 @@ func _draw_grid(map_size: Vector2) -> void:
 		var width := 2.0 if is_axis else 1.0
 		draw_line(vertical_from, vertical_to, color, width)
 		draw_line(horizontal_from, horizontal_to, color, width)
-		coordinate += 20.0
+		coordinate += step
 
 
 func _draw_obstacles(map_size: Vector2) -> void:
@@ -119,6 +142,8 @@ func _draw_black_holes(map_size: Vector2) -> void:
 		var vertical_distance := absf(flight_altitude - black_hole.global_position.y)
 
 		# Both rings are horizontal cross-sections at the ship's fixed altitude.
+		# Ring where pull ~= 1 m/s^2: mu / (d^2 + s^2) = 1  =>  d^2 = mu - s^2,
+		# then reduced to the cross-section at our flight altitude.
 		var influence_radius_squared := mu - softening * softening - vertical_distance * vertical_distance
 		if influence_radius_squared > 0.0:
 			draw_arc(
@@ -147,7 +172,7 @@ func _draw_body_id(center: Vector2, body_id: String, color: Color) -> void:
 
 
 func _draw_destination(map_size: Vector2) -> void:
-	var destination := Vector3(100.0, 100.0, 10.0)
+	var destination := Vector3(200.0, 200.0, 10.0)
 	var arrival_radius := 3.0
 	if _flight != null:
 		var value: Variant = _flight.get("destination")

@@ -1,3 +1,10 @@
+# =============================================================================
+# vr_minimap_presenter.gd — puts the shared FlightMiniMap into the headset.
+# Builds, in code: a SubViewport rendering a FlightMiniMap Control to a
+# transparent texture, shown on an unshaded quad. The node sits under
+# XRCamera3D in main.tscn so the quad is head-locked; no_depth_test keeps it
+# readable through world geometry. main.gd toggles it per runtime mode.
+# =============================================================================
 extends Node3D
 class_name VRMiniMapPresenter
 

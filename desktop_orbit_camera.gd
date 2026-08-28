@@ -1,10 +1,17 @@
+# =============================================================================
+# desktop_orbit_camera.gd — mouse/keyboard orbit camera for playing without a
+# headset. main.gd makes it `current` only in desktop mode. It orbits
+# target_path (the XR rig), so it automatically follows the ship in flight.
+# Controls: left-drag orbit, wheel zoom, arrow keys orbit, R reset, Esc quit.
+# use_z_up supports map-style scenes whose ground lies on the XY plane.
+# =============================================================================
 extends Camera3D
 class_name DesktopOrbitCamera
 
 ## Simple no-headset preview camera. Drag to orbit, scroll to zoom.
 
 @export_node_path("Node3D") var target_path: NodePath
-@export_range(1.2, 250.0, 0.1) var distance := 4.0
+@export_range(1.2, 400.0, 0.1) var distance := 4.0
 @export_range(0.1, 2.0, 0.05) var orbit_sensitivity := 0.35
 @export_range(0.1, 2.0, 0.05) var keyboard_speed := 0.8
 @export var initial_yaw_degrees := 0.0
@@ -50,7 +57,7 @@ func _input(event: InputEvent) -> void:
 					_update_camera()
 			MOUSE_BUTTON_WHEEL_DOWN:
 				if event.pressed:
-					distance = minf(250.0, distance * 1.1)
+					distance = minf(400.0, distance * 1.1)
 					_update_camera()
 	elif event is InputEventMouseMotion and _dragging:
 		_yaw -= deg_to_rad(event.relative.x * orbit_sensitivity)

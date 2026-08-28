@@ -1,3 +1,12 @@
+# =============================================================================
+# xr_hands.gd — draws tracked hands as spheres (joints) + cylinders (bones),
+# generated in code from OpenXR XRHandTracker data; no rigged hand meshes.
+# Hands only appear when the runtime reports REAL hand tracking (not
+# controller-emulated), so they never overlap the controller models from
+# xr_visuals.gd. Gotcha handled here: XRHandTracker returns RAW joint
+# transforms, so the XRServer reference frame + world scale must be applied
+# manually (XRController3D/XRCamera3D nodes normally do that for you).
+# =============================================================================
 extends Node3D
 class_name XRHandVisuals
 ## hand visuals for OpenXR hand tracking
