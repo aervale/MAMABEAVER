@@ -6,7 +6,6 @@
 [ext_resource type="PackedScene" uid="uid://1qvjtj5tmo70" path="res://models/quest_touch_plus_left.glb" id="4_mdll"]
 [ext_resource type="PackedScene" uid="uid://cn5kxyuuli1wv" path="res://models/quest_touch_plus_right.glb" id="5_mdlr"]
 [ext_resource type="Script" uid="uid://bkeashwobe3gi" path="res://xr_passthrough.gd" id="6_pass"]
-[ext_resource type="Shader" uid="uid://bdncegx70k5ge" path="res://floor_grid.gdshader" id="7_grid"]
 [ext_resource type="Script" uid="uid://im3dcos560qi" path="res://moon_presenter.gd" id="8_moon"]
 [ext_resource type="PackedScene" uid="uid://yjgpcm06iylu" path="res://source/moon.fbx" id="9_moon_model"]
 [ext_resource type="Texture2D" uid="uid://dp0t5k5h3c4od" path="res://source/moon_color.png" id="10_moon_color"]
@@ -49,19 +48,6 @@ ambient_light_color = Color(0.18, 0.22, 0.34, 1)
 ambient_light_energy = 0.35
 reflected_light_source = 2
 
-[sub_resource type="ShaderMaterial" id="ShaderMaterial_floor"]
-render_priority = 0
-shader = ExtResource("7_grid")
-shader_parameter/floor_color = Color(0.1, 0.11, 0.13, 1)
-shader_parameter/line_color = Color(0.3, 0.48, 0.68, 1)
-shader_parameter/cell_size = 5.0
-
-[sub_resource type="PlaneMesh" id="PlaneMesh_floor"]
-size = Vector2(140, 140)
-
-[sub_resource type="BoxShape3D" id="BoxShape3D_floor"]
-size = Vector3(140, 0.2, 140)
-
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_hud"]
 content_margin_left = 18.0
 content_margin_top = 14.0
@@ -91,6 +77,8 @@ obstacles_root_path = NodePath("../MoonExhibit")
 black_holes_root_path = NodePath("../BlackHoleExhibit")
 vr_status_path = NodePath("XRCamera3D/FlightHUD")
 desktop_status_path = NodePath("../DesktopHUD/Panel/Content/Mode")
+play_area_min = Vector2(-20, -20)
+play_area_max = Vector2(120, 120)
 
 [node name="XRCamera3D" type="XRCamera3D" parent="XROrigin3D" unique_id=807774865]
 
@@ -315,17 +303,6 @@ initial_pitch_degrees = 45.0
 [node name="WorldEnvironment" type="WorldEnvironment" parent="." unique_id=868570715]
 environment = SubResource("Environment_lts4m")
 
-[node name="Floor" type="StaticBody3D" parent="." unique_id=1222995564]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 50, 0, 50)
-
-[node name="Mesh" type="MeshInstance3D" parent="Floor" unique_id=1788946882]
-material_override = SubResource("ShaderMaterial_floor")
-mesh = SubResource("PlaneMesh_floor")
-
-[node name="Collision" type="CollisionShape3D" parent="Floor" unique_id=429380688]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.1, 0)
-shape = SubResource("BoxShape3D_floor")
-
 [node name="Props" type="Node3D" parent="." unique_id=546788418]
 
 [node name="SunLight" type="DirectionalLight3D" parent="." unique_id=1844096403]
@@ -347,7 +324,6 @@ shadow_enabled = true
 [node name="Passthrough" type="Node" parent="." unique_id=1290157622]
 script = ExtResource("6_pass")
 world_environment = NodePath("../WorldEnvironment")
-hide_in_passthrough = Array[NodePath]([NodePath("../Floor")])
 
 [node name="DesktopHUD" type="CanvasLayer" parent="." unique_id=682021376]
 layer = 10
@@ -402,3 +378,5 @@ custom_minimum_size = Vector2(280, 280)
 layout_mode = 2
 mouse_filter = 2
 script = ExtResource("15_minimap")
+map_min = Vector2(-20, -20)
+map_max = Vector2(120, 120)

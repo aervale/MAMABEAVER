@@ -11,6 +11,8 @@ gravity fields and collision volumes of ten planets and five black holes.
 - A/X, trigger, or desktop `R`: restart after collision, capture, or arrival.
 - Fuel starts at `100` and full thrust consumes `8` units per second.
 - Coasting consumes no fuel; gravity and inertia continue to move the ship.
+- The 3D floor mesh and floor collision are removed for an open-space view.
+- The logical flight boundary remains `X/Y=-20..120` and is enforced in code.
 - The upper-right minimap is shared by desktop and in-headset displays.
 
 The minimap shows:
@@ -41,6 +43,10 @@ predicted three-dimensional point while altitude remains fixed at logical
 `Z=10`. The integration uses fourth-order Runge-Kutta (RK4), a default step of
 `0.1 s`, and an `8 s` horizon. It updates every `0.1 s` so both minimaps reuse
 one prediction instead of integrating separately.
+
+The removed floor does not define the play area. `spaceship_flight.gd` clamps
+real and predicted positions to `(-20,-20)..(120,120)`, while both desktop and
+VR minimaps retain the same coordinate range.
 
 By default, the forecast assumes the current head-relative thrust vector is
 held. It also predicts fuel depletion; after predicted fuel reaches zero, the
