@@ -31,14 +31,14 @@ func _run_checks(scene: Node) -> void:
 		"flight minimum boundary remains -20,-20"
 	)
 	_check(
-		flight.get("play_area_max") == Vector2(120.0, 120.0),
-		"flight maximum boundary remains 120,120"
+		flight.get("play_area_max") == Vector2(220.0, 220.0),
+		"flight maximum boundary remains 220,220"
 	)
 	var desktop_map := scene.get_node_or_null("DesktopHUD/MiniMapPanel/Map")
 	_check(desktop_map != null, "desktop minimap must exist")
 	if desktop_map != null:
 		_check(desktop_map.get("map_min") == Vector2(-20.0, -20.0), "map minimum remains -20,-20")
-		_check(desktop_map.get("map_max") == Vector2(120.0, 120.0), "map maximum remains 120,120")
+		_check(desktop_map.get("map_max") == Vector2(220.0, 220.0), "map maximum remains 220,220")
 
 	_check(flight.has_method("get_total_gravity_at"), "flight exposes the vector field")
 	_check(flight.has_method("get_predicted_flow_points"), "flight exposes ODE flow samples")

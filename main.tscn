@@ -20,6 +20,7 @@
 [ext_resource type="Script" uid="uid://o6gsvrtrx353" path="res://black_hole.gd" id="19_black_hole"]
 [ext_resource type="Shader" path="res://starfield_sky.gdshader" id="20_starsky"]
 [ext_resource type="Script" path="res://ambient_dust.gd" id="21_dust"]
+[ext_resource type="Script" path="res://beaver_director.gd" id="22_beavers"]
 
 [sub_resource type="StandardMaterial3D" id="Material_ship_marker"]
 albedo_color = Color(0.08, 0.75, 1, 1)
@@ -87,6 +88,7 @@ vr_status_path = NodePath("XRCamera3D/FlightHUD")
 desktop_status_path = NodePath("../DesktopHUD/Panel/Content/Mode")
 play_area_min = Vector2(-20, -20)
 play_area_max = Vector2(220, 220)
+beaver_director_path = NodePath("../BeaverExhibit")
 
 [node name="XRCamera3D" type="XRCamera3D" parent="XROrigin3D" unique_id=807774865]
 
@@ -276,6 +278,9 @@ roughness_texture = ExtResource("12_moon_rough")
 target_diameter_meters = 80.0
 rotation_speed_degrees = 0.25
 
+[node name="BeaverExhibit" type="Node3D" parent="." unique_id=903318460]
+script = ExtResource("22_beavers")
+
 [node name="BlackHoleExhibit" type="Node3D" parent="." unique_id=637288623]
 
 [node name="BlackHole03" type="Node3D" parent="BlackHoleExhibit" unique_id=387114975]
@@ -402,7 +407,7 @@ text = "Ship: (0, 0, 10)  ·  Goal: (200, 200, 10)"
 [node name="Controls" type="Label" parent="DesktopHUD/Panel/Content" unique_id=156795761]
 layout_mode = 2
 theme_override_colors/font_color = Color(0.66, 0.72, 0.84, 1)
-text = "B/Y: start gravity   ·   WASD: fly   ·   Drag: orbit   ·   R: reset   ·   Esc: quit"
+text = "B/Y: start & launch   ·   WASD: fly   ·   Slow-touch planet: land   ·   Right-click: magic bolt   ·   R: reset"
 
 [node name="Credit" type="Label" parent="DesktopHUD/Panel/Content" unique_id=709426833]
 layout_mode = 2

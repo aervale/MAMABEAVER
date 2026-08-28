@@ -21,3 +21,14 @@ author is credited and changes are indicated as required by CC BY 4.0.
 
 The archive was supplied locally as `black-hole.zip`. The imported model and
 textures remain attributed to Nestaeric under CC BY 4.0.
+
+## Beaver (pending download)
+
+- Model: [Beaver Inc, Global Game Jam 2020](https://sketchfab.com/3d-models/beaver-inc-global-game-jam-2020-4f9358a91d284c5ea66b3169a485bc9c)
+- Author: [Edriviel](https://sketchfab.com/Edriviel)
+- License: [Creative Commons Attribution 4.0 International](https://creativecommons.org/licenses/by/4.0/)
+- Expected local file: `models/beaver/beaver.glb` (manual download from
+  Sketchfab; the game falls back to a procedural primitive beaver until the
+  file exists).
+- Project-side changes: runtime height normalization to ~0.9 m and instance
+  budgeting for Quest performance.

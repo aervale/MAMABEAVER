@@ -12,8 +12,10 @@
 # contracts spaceship_flight.gd uses.
 #
 # It also overlays live flight telemetry published by the controller: the
-# RK4 predicted-flow line (color-coded SAFE cyan / IMPACT red / GOAL green)
-# and a fuel gauge in the readout row.
+# RK4 predicted-flow line (color-coded SAFE cyan / IMPACT red / GOAL green /
+# LANDED amber), a fuel gauge in the readout row, and — when a BeaverExhibit
+# (beaver_director.gd) is in the scene — orange per-planet beaver-count
+# badges plus a delivered/cargo tally.
 #
 # GEOMETRY NOTE: the ship flies at a fixed altitude, so every circle drawn is
 # a sphere's HORIZONTAL CROSS-SECTION at that altitude, not its full radius:
@@ -33,6 +35,7 @@ class_name FlightMiniMap
 var _flight: Node3D
 var _obstacles: Node3D
 var _black_holes: Node3D
+var _beaver_director: Node3D
 
 
 func _ready() -> void:
@@ -103,6 +106,8 @@ func _draw_predicted_flow(map_size: Vector2) -> void:
 			flow_color = Color(0.16, 1.0, 0.42, 0.98)
 		"STOPPED":
 			flow_color = Color(0.58, 0.64, 0.72, 0.78)
+		"LANDED":
+			flow_color = Color(1.0, 0.72, 0.2, 0.95)
 
 	# A dark underlay keeps the ODE flow visible across grid lines and bodies.
 	draw_polyline(map_points, Color(0.0, 0.015, 0.04, 0.9), 5.5, true)
@@ -146,6 +151,11 @@ func _draw_obstacles(map_size: Vector2) -> void:
 			var collision_radius_pixels := sqrt(collision_radius_squared) * pixels_per_meter
 			draw_arc(center, collision_radius_pixels, 0.0, TAU, 32, Color(0.72, 1.0, 0.28, 0.95), 1.5)
 		_draw_body_id(center, "P" + String(obstacle.name).trim_prefix("Planet"), Color(0.55, 1.0, 0.67))
+		if _beaver_director != null and _beaver_director.has_method("get_planet_beaver_count"):
+			var beaver_count := int(_beaver_director.call("get_planet_beaver_count", obstacle))
+			if beaver_count > 0:
+				# Orange badge: beavers still waiting on this planet.
+				_draw_body_id(center + Vector2(0.0, 12.0), "x%d" % beaver_count, Color(1.0, 0.7, 0.2))
 
 
 func _draw_black_holes(map_size: Vector2) -> void:
@@ -247,7 +257,12 @@ func _draw_spacecraft(map_size: Vector2) -> void:
 		var arrow_end := center + screen_gravity.normalized() * arrow_length
 		draw_line(center, arrow_end, Color(1.0, 0.72, 0.12, 0.95), 3.0)
 		draw_circle(arrow_end, 3.0, Color(1.0, 0.8, 0.22, 1.0))
-	var ship_color := Color(1.0, 0.22, 0.16, 1.0) if int(_flight.get("state")) == 1 else Color(0.05, 0.78, 1.0, 1.0)
+	var flight_state := int(_flight.get("state"))
+	var ship_color := Color(0.05, 0.78, 1.0, 1.0)
+	if flight_state == 1:  # CRASHED
+		ship_color = Color(1.0, 0.22, 0.16, 1.0)
+	elif flight_state == 4:  # LANDED (appended last in FlightState)
+		ship_color = Color(1.0, 0.72, 0.2, 1.0)
 	draw_circle(center, 3.0, ship_color)
 	draw_line(center + Vector2(-6, 0), center + Vector2(6, 0), Color(0.75, 0.95, 1.0), 1.5)
 	draw_line(center + Vector2(0, -6), center + Vector2(0, 6), Color(0.75, 0.95, 1.0), 1.5)
@@ -307,6 +322,18 @@ func _draw_readout(map_size: Vector2) -> void:
 		flow_color = Color(1.0, 0.28, 0.24, 0.98)
 	elif flow_result == "GOAL":
 		flow_color = Color(0.22, 1.0, 0.48, 0.98)
+	elif flow_result == "LANDED":
+		flow_color = Color(1.0, 0.72, 0.2, 0.95)
+
+	if _beaver_director != null and _beaver_director.has_method("get_total_count"):
+		var beaver_text := "BVR %d/%d · CARGO %d" % [
+			int(_beaver_director.call("get_delivered_count")),
+			int(_beaver_director.call("get_total_count")),
+			int(_beaver_director.call("get_cargo_count")),
+		]
+		var beaver_y := map_size.y - (font_size + 10.0) * 2.0 - 12.0
+		draw_rect(Rect2(6, beaver_y, minf(190.0, map_size.x - 48.0), font_size + 10.0), Color(0.01, 0.02, 0.05, 0.82))
+		draw_string(font, Vector2(12, beaver_y + font_size + 1.0), beaver_text, HORIZONTAL_ALIGNMENT_LEFT, -1.0, font_size, Color(1.0, 0.78, 0.35))
 	draw_rect(Rect2(6, map_size.y - font_size - 18.0, minf(190.0, map_size.x - 48.0), font_size + 10.0), Color(0.01, 0.02, 0.05, 0.82))
 	draw_string(font, Vector2(12, map_size.y - 10.0), flow_text, HORIZONTAL_ALIGNMENT_LEFT, -1.0, font_size, flow_color)
 	draw_string(font, Vector2(map_size.x - 32, map_size.y - 8), "X", HORIZONTAL_ALIGNMENT_LEFT, -1.0, font_size, Color(0.45, 0.76, 1.0))
@@ -333,3 +360,4 @@ func _find_scene_nodes() -> void:
 	_flight = scene.get_node_or_null("XROrigin3D") as Node3D
 	_obstacles = scene.get_node_or_null("MoonExhibit") as Node3D
 	_black_holes = scene.get_node_or_null("BlackHoleExhibit") as Node3D
+	_beaver_director = scene.get_node_or_null("BeaverExhibit") as Node3D

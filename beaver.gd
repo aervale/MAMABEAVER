@@ -1,0 +1,259 @@
+# =============================================================================
+# beaver.gd — one collectible beaver (Tim's army). Spawned at runtime by
+# beaver_director.gd as a child of a hazard planet, standing on the surface
+# near the flight plane.
+#
+# STATES: IDLE (standing on its planet, bobbing) -> TRACTORED (hit by a magic
+# bolt; eases to the ship over ~1.5s, shrinking and spinning) -> CARGO
+# (invisible, riding in the ship, counted by the director) -> DELIVERED
+# (banked at MIT). reset_to_spawn() returns it to IDLE at its spawn point
+# from ANY state — including mid-tractor.
+#
+# VISUAL: if the director injects `model_scene` (the CC-BY Sketchfab "Beaver
+# Inc" model, see MODEL_ATTRIBUTION.md), it's normalized to target_height
+# via the same merged-AABB rescale pattern as moon_presenter.gd. Otherwise a
+# procedural ~15-primitive beaver is built in code (mit_destination.gd
+# style): brown body, flat tail, buck teeth. No lights, no shadows — up to
+# ~30 of these exist at once on Quest.
+#
+# The director orients the node so local +Y is the planet's surface normal
+# and local +Z faces outward; the visual is built face-forward on +Z.
+# =============================================================================
+extends Node3D
+class_name BeaverCritter
+
+signal collected(beaver: Node3D)
+
+enum BeaverState {
+	IDLE,
+	TRACTORED,
+	CARGO,
+	DELIVERED,
+}
+
+const TRACTOR_DURATION := 1.5
+const BOB_HEIGHT := 0.06
+const BOB_SPEED := 2.2
+
+## Injected by the director BEFORE add_child (so _ready sees them).
+var model_scene: PackedScene = null
+var target_height := 0.9
+
+var state := BeaverState.IDLE
+
+var _visual_root: Node3D
+var _flight: Node3D
+var _home_parent: Node3D
+var _home_transform: Transform3D
+var _tractor_from := Vector3.ZERO
+var _tractor_elapsed := 0.0
+var _bob_phase := 0.0
+
+
+func _ready() -> void:
+	_home_parent = get_parent() as Node3D
+	_home_transform = transform
+	_bob_phase = randf() * TAU
+	_build_visual()
+
+
+func _process(delta: float) -> void:
+	match state:
+		BeaverState.IDLE:
+			# Gentle bob sells "alive" for the cost of one sine per frame.
+			_bob_phase += delta * BOB_SPEED
+			if _visual_root != null:
+				_visual_root.position.y = absf(sin(_bob_phase)) * BOB_HEIGHT
+		BeaverState.TRACTORED:
+			_advance_tractor(delta)
+
+
+## Called by the director when a magic bolt connects. Reparents to the scene
+## root (so the beaver's flight isn't dragged around by its planet's frame)
+## and starts easing toward the ship.
+func begin_tractor(flight: Node3D) -> bool:
+	if state != BeaverState.IDLE:
+		return false
+	state = BeaverState.TRACTORED
+	_flight = flight
+	_tractor_elapsed = 0.0
+	var keep_transform := global_transform
+	var scene_root := get_tree().current_scene
+	get_parent().remove_child(self)
+	scene_root.add_child(self)
+	global_transform = keep_transform
+	_tractor_from = global_position
+	return true
+
+
+func _advance_tractor(delta: float) -> void:
+	_tractor_elapsed += delta
+	var progress := clampf(_tractor_elapsed / TRACTOR_DURATION, 0.0, 1.0)
+	# Ease-in toward the ship's LIVE position — the player may still move.
+	var eased := progress * progress * (3.0 - 2.0 * progress)
+	var target := global_position
+	if _flight != null and _flight.has_method("get_spacecraft_world_position"):
+		target = _flight.call("get_spacecraft_world_position")
+	global_position = _tractor_from.lerp(target, eased)
+	scale = Vector3.ONE * (1.0 - 0.4 * eased)
+	rotate_y(delta * 9.0)
+
+	if progress >= 1.0:
+		state = BeaverState.CARGO
+		visible = false
+		collected.emit(self)
+
+
+## Full restore to the spawn point, from any state (incl. mid-tractor).
+func reset_to_spawn() -> void:
+	if get_parent() != _home_parent and _home_parent != null:
+		get_parent().remove_child(self)
+		_home_parent.add_child(self)
+	transform = _home_transform
+	scale = Vector3.ONE
+	visible = true
+	state = BeaverState.IDLE
+	_tractor_elapsed = 0.0
+
+
+func mark_delivered() -> void:
+	state = BeaverState.DELIVERED
+
+
+# --- visuals -----------------------------------------------------------------
+
+func _build_visual() -> void:
+	_visual_root = Node3D.new()
+	_visual_root.name = "BeaverVisual"
+	add_child(_visual_root)
+
+	if model_scene != null:
+		_build_imported_visual()
+	else:
+		_build_procedural_visual()
+
+
+func _build_imported_visual() -> void:
+	var imported := model_scene.instantiate() as Node3D
+	if imported == null:
+		push_warning("BeaverCritter|WARN: model root is not Node3D, using fallback")
+		_build_procedural_visual()
+		return
+	_visual_root.add_child(imported)
+
+	# Same merged-AABB normalization as moon_presenter.gd, but height-based
+	# (beavers should be target_height tall regardless of source units).
+	var bounds := AABB()
+	var has_bounds := false
+	var pending: Array[Node] = [imported]
+	while not pending.is_empty():
+		var node: Node = pending.pop_back()
+		if node is MeshInstance3D and (node as MeshInstance3D).mesh != null:
+			var mesh_instance := node as MeshInstance3D
+			var relative := imported.global_transform.affine_inverse() * mesh_instance.global_transform
+			var mesh_bounds := relative * mesh_instance.get_aabb()
+			bounds = bounds.merge(mesh_bounds) if has_bounds else mesh_bounds
+			has_bounds = true
+		for child in node.get_children():
+			pending.append(child)
+
+	if not has_bounds or bounds.size.y <= 0.0001:
+		push_warning("BeaverCritter|WARN: model has no usable bounds, using fallback")
+		imported.queue_free()
+		_build_procedural_visual()
+		return
+
+	var uniform_scale := target_height / bounds.size.y
+	imported.scale = Vector3.ONE * uniform_scale
+	# Feet on the surface: lift so the bounds' bottom sits at local y = 0.
+	imported.position = Vector3(0.0, -bounds.position.y * uniform_scale, 0.0)
+
+
+func _build_procedural_visual() -> void:
+	var fur := StandardMaterial3D.new()
+	fur.albedo_color = Color(0.42, 0.27, 0.16)
+	fur.roughness = 0.9
+
+	var dark := StandardMaterial3D.new()
+	dark.albedo_color = Color(0.24, 0.14, 0.09)
+	dark.roughness = 0.95
+
+	var white := StandardMaterial3D.new()
+	white.albedo_color = Color(0.95, 0.93, 0.85)
+	white.roughness = 0.4
+
+	var black := StandardMaterial3D.new()
+	black.albedo_color = Color(0.05, 0.04, 0.04)
+	black.roughness = 0.3
+
+	# Chunky hunched body reads as "beaver" even at 20 m.
+	var body := SphereMesh.new()
+	body.radius = 0.28
+	body.height = 0.56
+	body.radial_segments = 12
+	body.rings = 6
+	body.material = fur
+	_add_part(body, Vector3(0.0, 0.3, 0.0)).scale = Vector3(1.0, 1.0, 1.2)
+
+	var head := SphereMesh.new()
+	head.radius = 0.16
+	head.height = 0.32
+	head.radial_segments = 10
+	head.rings = 5
+	head.material = fur
+	_add_part(head, Vector3(0.0, 0.56, 0.2))
+
+	var muzzle := SphereMesh.new()
+	muzzle.radius = 0.09
+	muzzle.height = 0.18
+	muzzle.radial_segments = 8
+	muzzle.rings = 4
+	muzzle.material = dark
+	_add_part(muzzle, Vector3(0.0, 0.5, 0.34))
+
+	# The famous teeth — the single most identifying beaver feature.
+	var tooth := BoxMesh.new()
+	tooth.size = Vector3(0.035, 0.06, 0.02)
+	tooth.material = white
+	_add_part(tooth, Vector3(-0.022, 0.43, 0.4))
+	_add_part(tooth, Vector3(0.022, 0.43, 0.4))
+
+	var eye := SphereMesh.new()
+	eye.radius = 0.028
+	eye.height = 0.056
+	eye.radial_segments = 6
+	eye.rings = 3
+	eye.material = black
+	_add_part(eye, Vector3(-0.07, 0.62, 0.32))
+	_add_part(eye, Vector3(0.07, 0.62, 0.32))
+
+	var ear := SphereMesh.new()
+	ear.radius = 0.04
+	ear.height = 0.08
+	ear.radial_segments = 6
+	ear.rings = 3
+	ear.material = dark
+	_add_part(ear, Vector3(-0.1, 0.7, 0.14))
+	_add_part(ear, Vector3(0.1, 0.7, 0.14))
+
+	# Flat paddle tail, slightly tilted onto the ground behind it.
+	var tail := BoxMesh.new()
+	tail.size = Vector3(0.22, 0.05, 0.34)
+	tail.material = dark
+	var tail_part := _add_part(tail, Vector3(0.0, 0.08, -0.4))
+	tail_part.rotation_degrees = Vector3(-12.0, 0.0, 0.0)
+
+	var foot := BoxMesh.new()
+	foot.size = Vector3(0.1, 0.05, 0.16)
+	foot.material = dark
+	_add_part(foot, Vector3(-0.13, 0.025, 0.08))
+	_add_part(foot, Vector3(0.13, 0.025, 0.08))
+
+
+func _add_part(mesh: Mesh, at: Vector3) -> MeshInstance3D:
+	var instance := MeshInstance3D.new()
+	instance.mesh = mesh
+	instance.position = at
+	instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_visual_root.add_child(instance)
+	return instance

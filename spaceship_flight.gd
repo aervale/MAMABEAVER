@@ -27,15 +27,27 @@
 #
 # INPUT: left thumbstick (falls back to right), HEAD-RELATIVE — stick-forward
 # is wherever you are looking, flattened to the horizon. WASD is a
-# desktop-testing convenience. B/Y engages the gravity field (starts flight);
-# A/X, trigger, or the R key restarts. Thrust burns FUEL
-# (fuel_burn_per_second, scaled by stick deflection); an empty tank leaves
-# only gravity, drag, and momentum.
+# desktop-testing convenience. B/Y engages the gravity field (starts
+# flight) and, while LANDED, launches you off the planet. TRIGGER fires a
+# magic bolt (only while LANDED); it is deliberately NOT a restart button
+# anymore — restart is A/X or the R key. Desktop fire = right-click (left
+# is the orbit drag). Thrust burns FUEL (fuel_burn_per_second, scaled by
+# stick deflection); an empty tank leaves only gravity, drag, and momentum.
 #
-# STATE MACHINE: WAITING (spawn/reset; gravity disengaged so you can't drift
-# into a planet while reading the HUD) -> FLYING on B/Y -> CRASHED (planet
-# hit / black-hole capture) or ARRIVED (within arrival_radius of the
-# destination). End states zero velocity, pulse haptics, wait for restart.
+# STATE MACHINE: WAITING (spawn/reset; gravity disengaged so you can't
+# drift into a planet while reading the HUD) -> FLYING on B/Y -> then:
+#   * touch a planet SLOWER than landing_speed_threshold -> LANDED: snapped
+#     to the surface contact circle, tank refueled, trigger armed. B/Y
+#     launches (short grace window ignores the departed planet).
+#   * touch a planet faster, or any black hole capture -> CRASHED.
+#   * reach MIT: cargo is BANKED (run continues); ARRIVED (win) only when
+#     every beaver is delivered — see beaver_director.gd. Without a
+#     BeaverExhibit in the scene, arrival = win, like the pre-beaver game.
+# End states zero velocity, pulse haptics, and wait for restart (A/X, R).
+#
+# BEAVER COLLECTION: while LANDED, trigger/right-click fires a MagicBolt
+# (see magic_bolt.gd) curved by this controller's own gravity field. Bolt
+# hits hand beavers to the BeaverDirector, which tractors them aboard.
 #
 # FLOW PREDICTION: a few times per second, _update_predicted_flow() runs an
 # RK4 integration of the flight ODE (thrust held + gravity - drag) for
@@ -46,6 +58,8 @@
 extends XROrigin3D
 class_name SpacecraftFlightController
 
+const MagicBoltScript = preload("res://magic_bolt.gd")
+
 ## Moves the XR rig like a spacecraft over the XY play field. The spacecraft
 ## reference point is locked to a constant Z altitude while room-scale head
 ## tracking remains available inside the rig.
@@ -55,15 +69,21 @@ enum FlightState {
 	CRASHED,
 	ARRIVED,
 	WAITING,
+	# Appended last on purpose: the minimap colors states by enum ordinal.
+	LANDED,
 }
 
 const START_BUTTONS: Array[StringName] = [
 	&"by_button",
 ]
 
+# Trigger is deliberately NOT here anymore: it fires magic bolts now.
 const RESTART_BUTTONS: Array[StringName] = [
 	&"ax_button",
 	&"primary_click",
+]
+
+const FIRE_BUTTONS: Array[StringName] = [
 	&"trigger_click",
 ]
 
@@ -96,6 +116,17 @@ const RESTART_BUTTONS: Array[StringName] = [
 @export_group("Fuel")
 @export_range(1.0, 1000.0, 1.0) var maximum_fuel := 100.0
 @export_range(0.0, 100.0, 0.5) var fuel_burn_per_second := 8.0
+
+@export_group("Landing & beavers")
+## Touch a planet below this speed to land instead of crash.
+@export_range(0.5, 15.0, 0.5) var landing_speed_threshold := 4.0
+@export_range(1.0, 15.0, 0.5) var takeoff_speed := 5.0
+## After takeoff, the departed planet is ignored this long (no re-collide).
+@export_range(0.1, 3.0, 0.05) var takeoff_grace_seconds := 0.75
+@export_range(5.0, 60.0, 1.0) var bolt_speed := 25.0
+@export_range(0.5, 5.0, 0.1) var bolt_hit_radius := 2.0
+@export_range(1, 8, 1) var max_live_bolts := 3
+@export_node_path("Node3D") var beaver_director_path: NodePath
 
 @export_group("Planet gravity")
 ## Safety cap only affects pathological positions inside a planet.
@@ -130,6 +161,14 @@ var _vr_status: Label3D
 var _desktop_status: Label
 var _start_was_pressed := false
 var _restart_was_pressed := false
+var _fire_was_pressed := [false, false]
+var _landed_planet: Node3D = null
+var _takeoff_grace := 0.0
+var _beaver_director: Node3D = null
+var _live_bolts: Array[Node3D] = []
+var _inside_arrival_zone := false
+var _banner_text := ""
+var _banner_time_left := 0.0
 var _last_flight_input := Vector2.ZERO
 var _prediction_elapsed := 0.0
 
@@ -142,6 +181,7 @@ func _ready() -> void:
 	_black_holes_root = get_node_or_null(black_holes_root_path) as Node3D
 	_vr_status = get_node_or_null(vr_status_path) as Label3D
 	_desktop_status = get_node_or_null(desktop_status_path) as Label
+	_beaver_director = get_node_or_null(beaver_director_path) as Node3D
 	for controller in [_left_controller, _right_controller]:
 		if controller != null and not controller.button_pressed.is_connected(_on_controller_button_pressed):
 			controller.button_pressed.connect(_on_controller_button_pressed)
@@ -150,14 +190,30 @@ func _ready() -> void:
 
 func _physics_process(delta: float) -> void:
 	var start_pressed := _is_start_pressed()
-	if start_pressed and not _start_was_pressed and state == FlightState.WAITING:
-		start_flight()
+	if start_pressed and not _start_was_pressed:
+		if state == FlightState.WAITING:
+			start_flight()
+		elif state == FlightState.LANDED:
+			take_off()
 	_start_was_pressed = start_pressed
 
+	# Restart only from true end states — NOT from LANDED, or players would
+	# wipe their run reaching for the wrong button on a planet.
 	var restart_pressed := _is_restart_pressed()
-	if restart_pressed and not _restart_was_pressed and state != FlightState.FLYING:
+	if (
+		restart_pressed and not _restart_was_pressed
+		and (state == FlightState.CRASHED or state == FlightState.ARRIVED)
+	):
 		reset_flight()
 	_restart_was_pressed = restart_pressed
+
+	_poll_vr_fire()
+	if _takeoff_grace > 0.0:
+		_takeoff_grace -= delta
+		if _takeoff_grace <= 0.0:
+			_landed_planet = null
+	if _banner_time_left > 0.0:
+		_banner_time_left -= delta
 
 	if state == FlightState.FLYING:
 		var flight_input := _get_flight_input()
@@ -175,11 +231,14 @@ func _physics_process(delta: float) -> void:
 		_move_spacecraft(delta)
 
 		_check_obstacle_collisions()
-		if state == FlightState.FLYING and get_spacecraft_world_position().distance_to(_logical_to_world(destination)) <= arrival_radius:
-			state = FlightState.ARRIVED
-			velocity = Vector2.ZERO
-			_pulse_controllers(0.45, 0.5)
-			print("SpacecraftFlight|INFO: destination reached")
+		if state == FlightState.FLYING:
+			var at_destination := get_spacecraft_world_position().distance_to(_logical_to_world(destination)) <= arrival_radius
+			if at_destination:
+				_handle_arrival_zone()
+			else:
+				# Re-arm banking only after leaving the zone, so hovering at
+				# MIT doesn't re-trigger the banner every frame.
+				_inside_arrival_zone = false
 	else:
 		_last_flight_input = Vector2.ZERO
 
@@ -199,6 +258,17 @@ func reset_flight() -> void:
 	fuel = maximum_fuel
 	_last_flight_input = Vector2.ZERO
 	_prediction_elapsed = 0.0
+	_landed_planet = null
+	_takeoff_grace = 0.0
+	_inside_arrival_zone = false
+	_banner_time_left = 0.0
+	for bolt in _live_bolts:
+		if is_instance_valid(bolt):
+			bolt.queue_free()
+	_live_bolts.clear()
+	# Beavers ride along on a reset: everyone back to their spawn points.
+	if _beaver_director != null and _beaver_director.has_method("reset_all"):
+		_beaver_director.call("reset_all")
 	global_position = _logical_to_world(start_position)
 	_update_predicted_flow()
 	_update_status()
@@ -349,6 +419,12 @@ func _update_predicted_flow() -> void:
 		predicted_flow_result = "READY"
 		predicted_flow_message = "PRESS B/Y"
 		return
+	if state == FlightState.LANDED:
+		# Never integrate from inside the collision sphere — it would report
+		# an instant IMPACT and flash the minimap red while parked.
+		predicted_flow_result = "LANDED"
+		predicted_flow_message = "B/Y TO LAUNCH"
+		return
 	if state != FlightState.FLYING:
 		predicted_flow_result = "STOPPED"
 		predicted_flow_message = crash_message if state == FlightState.CRASHED else "DESTINATION"
@@ -447,16 +523,125 @@ func _get_collision_message_at(world_position: Vector3) -> String:
 
 func _check_obstacle_collisions() -> void:
 	var spacecraft_world_position := get_spacecraft_world_position()
-	var collision_message := _get_collision_message_at(spacecraft_world_position)
-	if collision_message.is_empty():
+
+	# Planets: approach speed decides landing vs crash.
+	if _obstacles_root != null:
+		for child in _obstacles_root.get_children():
+			var obstacle := child as Node3D
+			if obstacle == null:
+				continue
+			# Just took off from this one — give it a moment to get clear.
+			if obstacle == _landed_planet and _takeoff_grace > 0.0:
+				continue
+			var diameter: Variant = obstacle.get("target_diameter_meters")
+			if diameter == null:
+				continue
+			var collision_distance := float(diameter) * 0.5 + spacecraft_radius
+			if spacecraft_world_position.distance_to(obstacle.global_position) <= collision_distance:
+				if velocity.length() < landing_speed_threshold:
+					_land_on(obstacle, collision_distance)
+				else:
+					_crash("COLLISION · %s" % obstacle.name, 0.35)
+				return
+
+	# Black holes: no landing on those, ever.
+	if _black_holes_root != null:
+		for child in _black_holes_root.get_children():
+			var black_hole := child as Node3D
+			if black_hole == null or not black_hole.has_method("captures"):
+				continue
+			if bool(black_hole.call("captures", spacecraft_world_position, spacecraft_radius)):
+				_crash("CAPTURED · %s" % black_hole.name, 0.5)
+				return
+
+
+func _crash(message: String, haptic_duration: float) -> void:
+	state = FlightState.CRASHED
+	crash_message = message
+	velocity = Vector2.ZERO
+	_pulse_controllers(1.0, haptic_duration)
+	print("SpacecraftFlight|INFO: %s" % message)
+
+
+func _land_on(planet: Node3D, collision_distance: float) -> void:
+	state = FlightState.LANDED
+	_landed_planet = planet
+	velocity = Vector2.ZERO
+	fuel = maximum_fuel
+
+	# Snap the rig so the CAMERA's XZ sits just outside the planet's contact
+	# circle at the flight plane: radius = sqrt((R+r)^2 - dy^2), guaranteed
+	# real because a contact just happened. Move the rig by the camera's
+	# delta so room-scale offset is respected.
+	var camera_position := get_spacecraft_world_position()
+	var camera_xz := Vector2(camera_position.x, camera_position.z)
+	var planet_xz := Vector2(planet.global_position.x, planet.global_position.z)
+	var dy := start_position.z - planet.global_position.y
+	var ring_radius := sqrt(maxf(collision_distance * collision_distance - dy * dy, 0.01)) + 0.05
+	var away := camera_xz - planet_xz
+	away = away.normalized() if away.length() > 0.001 else Vector2.RIGHT
+	var target_xz := planet_xz + away * ring_radius
+	global_position += Vector3(target_xz.x - camera_xz.x, 0.0, target_xz.y - camera_xz.y)
+
+	_pulse_controllers(0.3, 0.2)
+	_update_predicted_flow()
+	_update_status()
+	print("SpacecraftFlight|INFO: landed on %s, refueled" % planet.name)
+
+
+func take_off() -> void:
+	if state != FlightState.LANDED:
+		return
+	var away := Vector2.RIGHT
+	if _landed_planet != null:
+		var camera_position := get_spacecraft_world_position()
+		var direction := (
+			Vector2(camera_position.x, camera_position.z)
+			- Vector2(_landed_planet.global_position.x, _landed_planet.global_position.z)
+		)
+		if direction.length() > 0.001:
+			away = direction.normalized()
+	state = FlightState.FLYING
+	velocity = away * takeoff_speed
+	_takeoff_grace = takeoff_grace_seconds
+	_prediction_elapsed = 0.0
+	_pulse_controllers(0.25, 0.15)
+	print("SpacecraftFlight|INFO: takeoff from %s" % (_landed_planet.name if _landed_planet != null else "?"))
+
+
+func _handle_arrival_zone() -> void:
+	if _inside_arrival_zone:
+		return
+	_inside_arrival_zone = true
+
+	# No beaver layer in the scene: behave like the pre-beaver game.
+	if _beaver_director == null or not _beaver_director.has_method("bank_cargo"):
+		state = FlightState.ARRIVED
+		velocity = Vector2.ZERO
+		_pulse_controllers(0.45, 0.5)
+		print("SpacecraftFlight|INFO: destination reached")
 		return
 
-	state = FlightState.CRASHED
-	crash_message = collision_message
-	velocity = Vector2.ZERO
-	var captured := collision_message.begins_with("CAPTURED")
-	_pulse_controllers(1.0, 0.5 if captured else 0.35)
-	print("SpacecraftFlight|INFO: %s" % collision_message)
+	var banked := int(_beaver_director.call("bank_cargo"))
+	var delivered := int(_beaver_director.call("get_delivered_count"))
+	var total := int(_beaver_director.call("get_total_count"))
+	if total > 0 and delivered >= total:
+		state = FlightState.ARRIVED
+		velocity = Vector2.ZERO
+		_pulse_controllers(0.45, 0.5)
+		print("SpacecraftFlight|INFO: all %d beavers delivered — mission complete" % total)
+	elif banked > 0:
+		_set_banner("BANKED %d BEAVER%s · %d TO GO" % [
+			banked, "" if banked == 1 else "S", total - delivered
+		], 3.0)
+		_pulse_controllers(0.3, 0.25)
+	else:
+		_set_banner("NO CARGO · SHOOT BEAVERS ON PLANETS", 2.5)
+
+
+func _set_banner(text: String, seconds: float) -> void:
+	_banner_text = text
+	_banner_time_left = seconds
 
 
 func _is_restart_pressed() -> bool:
@@ -468,8 +653,6 @@ func _is_restart_pressed() -> bool:
 		for action in RESTART_BUTTONS:
 			if controller.is_button_pressed(action):
 				return true
-		if controller.get_float(&"trigger") >= 0.75:
-			return true
 	return false
 
 
@@ -488,8 +671,67 @@ func _is_start_pressed() -> bool:
 func _on_controller_button_pressed(action: StringName) -> void:
 	if action in START_BUTTONS and state == FlightState.WAITING:
 		start_flight()
-	elif action in RESTART_BUTTONS and state != FlightState.FLYING:
+	elif action in START_BUTTONS and state == FlightState.LANDED:
+		take_off()
+	elif (
+		action in RESTART_BUTTONS
+		and (state == FlightState.CRASHED or state == FlightState.ARRIVED)
+	):
 		reset_flight()
+
+
+# --- magic bolt firing -------------------------------------------------------
+
+## VR fire: edge-detect the trigger per hand so the firing hand's pose aims
+## the bolt. (The trigger_click signal path also exists, but polling gives
+## us the analog fallback below 'click' pressure.)
+func _poll_vr_fire() -> void:
+	var controllers := [_left_controller, _right_controller]
+	for index in controllers.size():
+		var controller: XRController3D = controllers[index]
+		if controller == null:
+			continue
+		var pressed := controller.get_float(&"trigger") >= 0.6
+		for action in FIRE_BUTTONS:
+			pressed = pressed or controller.is_button_pressed(action)
+		if pressed and not _fire_was_pressed[index]:
+			_try_fire(
+				controller.global_position - controller.global_basis.z * 0.2,
+				-controller.global_basis.z
+			)
+		_fire_was_pressed[index] = pressed
+
+
+## Desktop fire: right-click (left is the orbit-camera drag). Ray through
+## the mouse from whatever camera is current.
+func _unhandled_input(event: InputEvent) -> void:
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_RIGHT and event.pressed:
+		var camera := get_viewport().get_camera_3d()
+		if camera != null:
+			_try_fire(
+				camera.project_ray_origin(event.position),
+				camera.project_ray_normal(event.position)
+			)
+
+
+func _try_fire(origin: Vector3, direction: Vector3) -> void:
+	# Bolts are a landed-only tool: collection happens ON planets, per spec.
+	if state != FlightState.LANDED:
+		return
+	_live_bolts = _live_bolts.filter(func(bolt): return is_instance_valid(bolt))
+	if _live_bolts.size() >= max_live_bolts:
+		var oldest: Node3D = _live_bolts.pop_front()
+		if is_instance_valid(oldest):
+			oldest.queue_free()
+
+	var bolt := MagicBoltScript.new() as MagicBolt
+	bolt.velocity = direction.normalized() * bolt_speed
+	bolt.hit_radius = bolt_hit_radius
+	bolt.setup(self, _beaver_director, _obstacles_root, _black_holes_root, play_area_min, play_area_max)
+	get_tree().current_scene.add_child(bolt)
+	bolt.global_position = origin
+	_live_bolts.append(bolt)
+	_pulse_controllers(0.15, 0.08)
 
 
 func _pulse_controllers(amplitude: float, duration: float) -> void:
@@ -506,10 +748,14 @@ func _update_status() -> void:
 	match state:
 		FlightState.WAITING:
 			message = "GRAVITY FIELD DISENGAGED\nPress B or Y to start"
+		FlightState.LANDED:
+			message = "LANDED · %s · REFUELED\nTRIGGER: magic bolt   B/Y: launch" % (
+				_landed_planet.name if _landed_planet != null else "?"
+			)
 		FlightState.CRASHED:
-			message = "%s\nPress A/X or trigger to restart" % crash_message
+			message = "%s\nPress A/X or R to restart" % crash_message
 		FlightState.ARRIVED:
-			message = "DESTINATION REACHED\nPress A/X or trigger to fly again"
+			message = _arrival_message()
 		_:
 			message = "POS %.1f, %.1f   ALT %.0f\nSPD %.1f   GRAV %.2f   FUEL %.0f/%.0f\nGOAL %.0f, %.0f   DIST %.1f" % [
 				logical_position.x,
@@ -523,10 +769,31 @@ func _update_status() -> void:
 				destination.y,
 				distance_left,
 			]
+			message += _beaver_status_line()
+	if _banner_time_left > 0.0:
+		message += "\n%s" % _banner_text
 	if _vr_status != null:
 		_vr_status.text = message
 	if _desktop_status != null:
 		_desktop_status.text = message.replace("\n", "  ·  ")
+
+
+func _beaver_status_line() -> String:
+	if _beaver_director == null or not _beaver_director.has_method("get_total_count"):
+		return ""
+	return "\nBVR %d/%d   CARGO %d" % [
+		int(_beaver_director.call("get_delivered_count")),
+		int(_beaver_director.call("get_total_count")),
+		int(_beaver_director.call("get_cargo_count")),
+	]
+
+
+func _arrival_message() -> String:
+	if _beaver_director != null and _beaver_director.has_method("get_total_count"):
+		return "ALL %d BEAVERS DELIVERED TO MIT\nPress A/X or R to fly again" % int(
+			_beaver_director.call("get_total_count")
+		)
+	return "DESTINATION REACHED\nPress A/X or R to fly again"
 
 
 func get_fuel_ratio() -> float:

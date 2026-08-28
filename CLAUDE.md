@@ -2,9 +2,11 @@
 
 Godot **4.7.2** project. One scene (`main.tscn`) that runs on Meta Quest via
 OpenXR **and** on desktop with no headset. You fly a spacecraft (which is the
-XR rig itself — your head is the ship) through open space from (0, 0) to an
-MIT Great Dome on an asteroid at (200, 200), dodging 10 moon-planets and 5
-black holes whose gravity pulls you off course. Play area is (-20, -20) to
+XR rig itself — your head is the ship) through open space, **landing on
+planets to collect beavers with magic bolts and delivering them to the MIT
+Great Dome** at (200, 200). 10 moon-planets (landable when you touch them
+slowly; lethal when fast) and 5 black holes (always lethal) pull you off
+course. Win = all 30 beavers delivered. Play area is (-20, -20) to
 (220, 220); the backdrop is a procedural starfield sky
 (`starfield_sky.gdshader`) — there is no floor.
 
@@ -28,7 +30,13 @@ game loop: thumbstick/WASD input, gravity, collision, arrival, restart —
 plus a fuel tank (thrust burns fuel; empty = coasting), a WAITING state
 (gravity engages only after B/Y so you don't drift into a planet at spawn),
 and an RK4 flow predictor that publishes a projected path + SAFE/IMPACT/GOAL
-verdict the minimap draws.
+verdict the minimap draws. The beaver layer: `beaver_director.gd` (on the
+root `BeaverExhibit` node) spawns 3 `beaver.gd` critters per planet on the
+latitude ring where each sphere crosses the flight plane; slow planet
+contact = LANDED (snap + refuel), where the trigger/right-click fires
+`magic_bolt.gd` projectiles curved by the same gravity field; hit beavers
+tractor aboard as cargo, and reaching MIT banks them (ARRIVED only when all
+are delivered).
 Planets (`moon_presenter.gd`) and black holes (`black_hole.gd`) are
 discovered by **duck typing**, not groups: anything under `MoonExhibit` with a
 `target_diameter_meters` property is a planet (gravity `a = C·r³/d²`);
@@ -63,27 +71,33 @@ altitude (`√(R² − dz²)`).
 | `moon_presenter.gd` | Planet visual + `target_diameter_meters` contract. |
 | `black_hole.gd` | Black-hole physics contract + procedural/imported visuals. |
 | `mit_destination.gd` | Goal landmark: primitives-only MIT dome on an asteroid. Visual only. |
-| `flight_minimap.gd` | Shared 2D map (`_draw()`-based). |
+| `flight_minimap.gd` | Shared 2D map (`_draw()`-based): bodies, flow line, fuel, beaver badges. |
+| `beaver_director.gd` / `beaver.gd` | Beaver spawning/mission state; one collectible critter. |
+| `magic_bolt.gd` | Gravity-curved collection projectile (landed-only). |
 | `vr_minimap_presenter.gd` | SubViewport → head-locked quad for VR map. |
 | `desktop_orbit_camera.gd` | No-headset orbit camera. |
 | `starfield_sky.gdshader` | Procedural deep-space sky (stars + nebula band). |
 | `xr_hands.gd` / `xr_visuals.gd` / `xr_passthrough.gd` | Hand tracking, controller models, passthrough. |
 | `tools/validate_flow_feature.gd` | Headless validation script for the RK4 flow predictor. |
+| `tools/validate_beaver_feature.gd` | Headless end-to-end check of the beaver loop (run it after touching gameplay). |
 | `gdscript_tutorial.gd` | Not part of the game — GDScript primer for the team. |
 | `source/`, `models/` | CC-BY Sketchfab moon + black hole, Quest controller GLBs. See `MODEL_ATTRIBUTION.md`. |
 
 **Load-bearing node names** (looked up by absolute path — renaming breaks
-things silently): `XROrigin3D`, `MoonExhibit`, `BlackHoleExhibit`, `SceneryExhibit`,
+things silently): `XROrigin3D`, `MoonExhibit`, `BlackHoleExhibit`, `SceneryExhibit`, `BeaverExhibit`,
 `DesktopCamera`, `DesktopHUD`, `XROrigin3D/XRCamera3D/FlightHUD`,
 `XROrigin3D/XRCamera3D/VRMiniMap`, `XROrigin3D/ShipMarker`.
 
 ## Running
 
-- **Desktop:** open in Godot 4.7.2, press F5. B/Y engages the gravity field
-  (starts the run), WASD flies, mouse-drag orbits, R restarts, Esc quits. macOS never attempts OpenXR (platform override).
+- **Desktop:** open in Godot 4.7.2, press F5. B/Y starts the run (and
+  launches off planets), WASD flies, slow-touch a planet to land,
+  right-click fires magic bolts while landed, mouse-drag orbits, R restarts,
+  Esc quits. macOS never attempts OpenXR (platform override).
 - **Quest:** Android preset `Meta Quest 3` in `export_presets.cfg`; needs the
   `addons/godotopenxrvendors` plugin + Android export templates. One-click
-  deploy or export APK. In-headset: B/Y starts, A/X or trigger restarts.
+  deploy or export APK. In-headset: B/Y starts/launches, trigger fires
+  magic bolts while landed, A/X restarts (trigger no longer restarts).
 
 ## Gotchas
 
@@ -104,3 +118,10 @@ things silently): `XROrigin3D`, `MoonExhibit`, `BlackHoleExhibit`, `SceneryExhib
 - `SceneryExhibit` holds big background moons far off the flight plane.
   They are **decorative only** — the flight controller and minimap scan just
   `MoonExhibit`/`BlackHoleExhibit` — so never parent a real hazard there.
+- `FlightState.LANDED` is deliberately appended LAST in the enum — the
+  minimap colors the ship dot by enum ordinal. Never insert states mid-enum.
+- Beaver model drop-in: put the CC-BY Sketchfab beaver at
+  `models/beaver/beaver.glb` and the director uses it for the first
+  `imported_model_budget` (6) beavers; absent, all beavers use the
+  procedural fallback. Don't raise the budget much — it's 17.5k tris each.
+- After touching gameplay, run both headless validators in `tools/`.
