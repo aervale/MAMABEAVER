@@ -45,6 +45,10 @@ func _run_checks(scene: Node) -> void:
 	var ship_visual := scene.get_node_or_null("XROrigin3D/Spacecraft") as Node3D
 	var left_controller := scene.get_node_or_null("XROrigin3D/XRControllerLeft") as XRController3D
 	var right_controller := scene.get_node_or_null("XROrigin3D/XRControllerRight") as XRController3D
+	var desktop_results := scene.get_node_or_null("DesktopHUD/MissionResults")
+	var vr_results := scene.get_node_or_null(
+		"XROrigin3D/XRCamera3D/FlightHUD/ResultsViewport/MissionResults"
+	)
 	_check(flight != null, "XROrigin3D must exist")
 	_check(director != null, "BeaverExhibit must exist")
 	_check(
@@ -62,6 +66,12 @@ func _run_checks(scene: Node) -> void:
 		"background music loads, plays, and loops"
 	)
 	_check(ship_visual != null, "visible spacecraft must exist")
+	_check(
+		desktop_results != null and vr_results != null
+		and desktop_results.has_method("is_showing")
+		and String(desktop_results.call("get_title")) == "VICTORY!",
+		"desktop and XR settlement screens share the VICTORY presentation"
+	)
 	_check(
 		comfort_vignette != null and comfort_vignette.has_method("get_strength"),
 		"head-locked dynamic comfort vignette exists"
@@ -450,6 +460,17 @@ func _run_checks(scene: Node) -> void:
 	var victory_sounds_before := int(game_sfx.call("get_play_count", &"victory"))
 	flight.call("_handle_arrival_zone")
 	_check(int(flight.get("state")) == STATE_ARRIVED, "delivery 20 completes the mission")
+	await process_frame
+	_check(
+		bool(desktop_results.call("is_showing")) and bool(vr_results.call("is_showing")),
+		"VICTORY settlement screen appears in both desktop and XR presenters"
+	)
+	_check(
+		int(flight.call("get_beaver_score")) == required * 1000
+		and int(flight.call("get_mission_score"))
+			== int(flight.call("get_beaver_score")) + int(flight.call("get_fuel_score")),
+		"settlement score combines delivered beavers and remaining fuel"
+	)
 	_check(
 		int(game_sfx.call("get_play_count", &"mit_deposit")) == final_deposit_before + 1,
 		"final MIT delivery still plays its cargo-release sound"
@@ -462,6 +483,8 @@ func _run_checks(scene: Node) -> void:
 
 	# --- reset restores everything ---
 	flight.call("reset_flight")
+	await process_frame
+	_check(not bool(desktop_results.call("is_showing")), "reset closes the VICTORY settlement screen")
 	_check(int(director.call("get_delivered_count")) == 0, "reset clears delivered")
 	_check(int(director.call("get_total_count")) == total, "reset keeps all beavers")
 	_check(int(director.call("get_planet_beaver_count", planet)) == per_planet, "reset returns beavers to their planets")

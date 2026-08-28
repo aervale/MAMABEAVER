@@ -67,6 +67,8 @@ class_name SpacecraftFlightController
 const MagicBoltScript = preload("res://magic_bolt.gd")
 const SurfaceDustScript = preload("res://surface_dust.gd")
 const DepositEffectScript = preload("res://deposit_effect.gd")
+const SCORE_PER_BEAVER := 1000
+const MAXIMUM_FUEL_SCORE := 5000
 
 ## Moves the XR rig like a spacecraft over the XY play field. The spacecraft
 ## reference point is locked to a constant Z altitude while room-scale head
@@ -1521,6 +1523,35 @@ func _required_beaver_count() -> int:
 	if _beaver_director.has_method("get_total_count"):
 		return int(_beaver_director.call("get_total_count"))
 	return 0
+
+
+## Public settlement-screen score contract. Beaver delivery is the primary
+## objective; efficient piloting contributes a smaller, bounded fuel bonus.
+func get_beaver_score() -> int:
+	if _beaver_director == null or not _beaver_director.has_method("get_delivered_count"):
+		return 0
+	return int(_beaver_director.call("get_delivered_count")) * SCORE_PER_BEAVER
+
+
+func get_fuel_score() -> int:
+	var ratio := clampf(fuel / maxf(maximum_fuel, 0.001), 0.0, 1.0)
+	return int(round(ratio * float(MAXIMUM_FUEL_SCORE)))
+
+
+func get_mission_score() -> int:
+	return get_beaver_score() + get_fuel_score()
+
+
+func get_mission_rank() -> String:
+	var target_score := maxi(_required_beaver_count(), 1) * SCORE_PER_BEAVER + MAXIMUM_FUEL_SCORE
+	var ratio := float(get_mission_score()) / float(target_score)
+	if ratio >= 0.95:
+		return "S"
+	if ratio >= 0.85:
+		return "A"
+	if ratio >= 0.70:
+		return "B"
+	return "C"
 
 
 func get_fuel_ratio() -> float:
