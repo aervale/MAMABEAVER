@@ -288,6 +288,14 @@ func _draw_destination(plate: Vector2) -> void:
 	var centre := _world_to_map(Vector2(destination.x, destination.y), plate)
 	var radius_pixels := maxf(5.0, arrival_radius * _pixels_per_meter(plate))
 	var pulse := radius_pixels + 5.0 + sin(Time.get_ticks_msec() * 0.006) * 2.5
+	# Layered halo so the destination glows rather than sitting flat.
+	for i in 4:
+		draw_circle(
+			centre,
+			radius_pixels * (1.6 + 0.75 * float(i)),
+			Color(0.75, 1.0, 0.85, 0.05 - 0.008 * float(i))
+		)
+	draw_circle(centre, radius_pixels * 1.3, Color(0.85, 1.0, 0.9, 0.16))
 	draw_circle(centre, radius_pixels, Color(COLOR_CLEARED, 0.22))
 	draw_arc(centre, radius_pixels, 0.0, TAU, 32, COLOR_CLEARED, 2.0)
 	draw_arc(centre, pulse, 0.0, TAU, 24, Color(COLOR_CLEARED, 0.55), 1.5)

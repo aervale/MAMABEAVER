@@ -196,8 +196,8 @@ func _create_materials() -> void:
 	_rock.roughness = 0.96
 
 	_limestone = StandardMaterial3D.new()
-	_limestone.albedo_color = Color(0.78, 0.75, 0.68)
-	_limestone.roughness = 0.78
+	_limestone.albedo_color = Color(0.9, 0.89, 0.85)
+	_limestone.roughness = 0.72
 
 	_shadow = StandardMaterial3D.new()
 	_shadow.albedo_color = Color(0.16, 0.18, 0.2)
@@ -218,14 +218,16 @@ func _create_materials() -> void:
 	_mit_red.emission = Color(0.45, 0.01, 0.035)
 	_mit_red.emission_energy_multiplier = 2.2
 
-	# An oxidized-copper dome adds a distinct color landmark without using text.
+	# The real Great Dome is pale limestone/white, not weathered copper.
+	# A faint warm emission keeps it readable as the goal at long range
+	# without turning it into a coloured blob.
 	_dome_copper = StandardMaterial3D.new()
-	_dome_copper.albedo_color = Color(0.08, 0.42, 0.38)
-	_dome_copper.metallic = 0.48
-	_dome_copper.roughness = 0.42
+	_dome_copper.albedo_color = Color(0.94, 0.94, 0.92)
+	_dome_copper.metallic = 0.0
+	_dome_copper.roughness = 0.58
 	_dome_copper.emission_enabled = true
-	_dome_copper.emission = Color(0.015, 0.15, 0.13)
-	_dome_copper.emission_energy_multiplier = 1.1
+	_dome_copper.emission = Color(0.5, 0.52, 0.55)
+	_dome_copper.emission_energy_multiplier = 0.35
 
 	_beacon = StandardMaterial3D.new()
 	_beacon.albedo_color = Color(1.0, 0.12, 0.18)

@@ -19,7 +19,7 @@ class_name VRMiniMapPresenter
 
 const FlightMiniMapScript = preload("res://flight_minimap.gd")
 
-@export_range(128, 1024, 64) var texture_size := 640
+@export_range(128, 2048, 64) var texture_size := 1024
 @export_range(0.2, 1.0, 0.05) var display_size_meters := 0.48
 @export_range(0.4, 2.5, 0.05) var expanded_size_meters := 1.15
 ## Where the quad sits when expanded, relative to the head.

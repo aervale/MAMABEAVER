@@ -15,9 +15,9 @@ class_name VRHUDPresenter
 
 const FlightHUDScript = preload("res://flight_hud_graphic.gd")
 
-@export var texture_size := Vector2i(768, 128)
+@export var texture_size := Vector2i(1024, 160)
 ## Metres wide in front of the player; height follows the texture's ratio.
-@export_range(0.3, 2.0, 0.05) var display_width_meters := 0.85
+@export_range(0.3, 2.0, 0.05) var display_width_meters := 0.95
 
 
 func _ready() -> void:

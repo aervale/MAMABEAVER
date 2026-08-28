@@ -291,6 +291,7 @@ func reset_flight() -> void:
 	_prediction_elapsed = 0.0
 	_landed_planet = null
 	_takeoff_grace = 0.0
+	_level_rig()
 	_inside_arrival_zone = false
 	_banner_time_left = 0.0
 	for bolt in _live_bolts:
@@ -663,7 +664,7 @@ func _land_on(planet: Node3D, collision_distance: float, impact_speed: float) ->
 func _walk_on_surface(delta: float, input: Vector2) -> void:
 	if _walk_dust_cooldown > 0.0:
 		_walk_dust_cooldown -= delta
-	if _landed_planet == null or input.is_zero_approx():
+	if _landed_planet == null:
 		return
 
 	var position_now := get_spacecraft_world_position()
@@ -673,6 +674,13 @@ func _walk_on_surface(delta: float, input: Vector2) -> void:
 	if surface_radius < 0.01:
 		return
 	var normal := to_surface / surface_radius
+
+	# Settle upright relative to the surface whether or not you are moving,
+	# so the planet always reads as "down" underfoot. This sits before the
+	# input check on purpose: standing still must still level you out.
+	_align_rig_up(normal, delta * 3.5)
+	if input.is_zero_approx():
+		return
 
 	# Build a walking frame from whatever camera the player is actually
 	# looking through (XRCamera3D in the headset, DesktopCamera otherwise).
@@ -700,6 +708,36 @@ func _walk_on_surface(delta: float, input: Vector2) -> void:
 	if _walk_dust_cooldown <= 0.0:
 		_walk_dust_cooldown = 0.22
 		_spawn_dust(get_spacecraft_world_position(), _landed_planet, 3, 0.8, 0.45)
+
+
+## Rotate the whole rig so its up-axis leans toward `target_up`. Walking
+## around a sphere without this leaves you sideways (and eventually upside
+## down) on the far side; with it, the horizon tips exactly as it would if
+## you really were strolling around the little world.
+## Rotation is applied about the rig origin, so your position is unchanged.
+func _align_rig_up(target_up: Vector3, weight: float) -> void:
+	var current_up := global_basis.y.normalized()
+	var goal := target_up.normalized()
+	var axis := current_up.cross(goal)
+	if axis.length() < 0.00001:
+		return
+	var angle := current_up.angle_to(goal) * clampf(weight, 0.0, 1.0)
+	if absf(angle) < 0.00001:
+		return
+	var pivot := global_position
+	global_basis = Basis(axis.normalized(), angle) * global_basis
+	global_position = pivot
+
+
+## Snap back to world-upright, keeping whichever way you were facing.
+func _level_rig() -> void:
+	var forward := -global_basis.z
+	forward.y = 0.0
+	if forward.length() < 0.01:
+		forward = Vector3.FORWARD
+	var pivot := global_position
+	global_basis = Basis.looking_at(forward.normalized(), Vector3.UP)
+	global_position = pivot
 
 
 ## Puff of surface dust, thrown along the planet's outward normal.
@@ -752,6 +790,9 @@ func take_off() -> void:
 				target.y - launch_from.z
 			)
 
+	# Flight assumes an upright rig (the play field is a horizontal plane),
+	# so undo whatever tilt walking the sphere left behind.
+	_level_rig()
 	state = FlightState.FLYING
 	velocity = away * takeoff_speed
 	_takeoff_grace = takeoff_grace_seconds

@@ -21,6 +21,7 @@
 [ext_resource type="Script" path="res://ambient_dust.gd" id="21_dust"]
 [ext_resource type="Script" path="res://beaver_director.gd" id="22_beavers"]
 [ext_resource type="Script" path="res://vr_hud_presenter.gd" id="23_vrhud"]
+[ext_resource type="Script" path="res://spacecraft_visual.gd" id="24_ship"]
 
 [sub_resource type="StandardMaterial3D" id="Material_ship_marker"]
 albedo_color = Color(0.08, 0.75, 1, 1)
@@ -120,7 +121,12 @@ right_model = ExtResource("5_mdlr")
 script = ExtResource("3_hnd0v")
 
 [node name="ShipMarker" type="MeshInstance3D" parent="XROrigin3D" unique_id=1213250166]
+visible = false
 mesh = SubResource("SphereMesh_ship_marker")
+
+[node name="Spacecraft" type="Node3D" parent="XROrigin3D" unique_id=903318470]
+script = ExtResource("24_ship")
+flight_path = NodePath("..")
 
 [node name="AmbientDust" type="Node3D" parent="XROrigin3D" unique_id=903318450]
 script = ExtResource("21_dust")

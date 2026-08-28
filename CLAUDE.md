@@ -81,6 +81,7 @@ altitude (`√(R² − dz²)`).
 | `surface_dust.gd` | Self-freeing one-shot dust puff (landing + footsteps). |
 | `black_hole_lens.gdshader` | Screen-space gravitational lensing shell (layer 1). |
 | `black_hole_cloud.gdshader` | Translucent swirling gas cloud (layer 2). |
+| `spacecraft_visual.gd` | The ship you fly, visible around you (hidden while landed). |
 | `flight_hud_graphic.gd` / `vr_hud_presenter.gd` | Graphical in-headset status gauges (replaced the text Label3D). |
 | `vr_minimap_presenter.gd` | SubViewport → head-locked quad for VR map. |
 | `desktop_orbit_camera.gd` | No-headset orbit camera. |
@@ -138,6 +139,13 @@ things silently): `XROrigin3D`, `MoonExhibit`, `BlackHoleExhibit`, `SceneryExhib
   `LANDED`, where `get_spacecraft_world_position()` returns the true height
   so you can stand anywhere on a planet. Minimap collision circles always
   use the flight plane, not the walker's height.
+- While LANDED the rig is rotated so its up-axis follows the planet's
+  surface normal (`_align_rig_up`), which is what makes walking around a
+  sphere feel real; `_level_rig()` restores upright on takeoff and reset,
+  because flight assumes a horizontal play field.
+- `media/` holds demo stills and GIF clips (regenerate with a capture
+  script; there is no ffmpeg on this machine, GIFs are built with Pillow
+  using /usr/bin/python3 — the anaconda python has a broken MKL).
 - **Transparent shells need a falloff.** A sphere with constant alpha
   renders as a flat disc with a hard rim, not a glow — that bug produced a
   grey bubble over MIT and hard-edged black-hole clouds. Fade by view angle

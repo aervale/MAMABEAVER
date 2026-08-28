@@ -101,7 +101,7 @@ func _place_on_planet(
 	# 0.97: the moon mesh is normalized by its LARGEST dimension, so it is
 	# slightly narrower than `radius` in most directions. Seating beavers a
 	# little into the surface beats having them hover at the limb.
-	var local_position := up * radius * 0.97
+	var local_position := up * radius * 0.93
 
 	# Basis: local +Y = surface normal; +Z is any consistent tangent (the
 	# beaver mesh is built facing +Z). The reference axis is chosen so it is

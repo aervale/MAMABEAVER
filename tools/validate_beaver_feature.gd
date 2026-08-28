@@ -134,6 +134,15 @@ func _run_checks(scene: Node) -> void:
 	for i in 120:
 		flight.call("_walk_on_surface", 1.0 / 60.0, Vector2(0.0, 1.0))
 	var after_walk: Vector3 = flight.call("get_spacecraft_world_position")
+	# The rig must tip so the planet stays "down" underfoot — this is what
+	# makes walking around the sphere feel like walking, not sliding.
+	var rig_up := (flight as Node3D).global_basis.y
+	var surface_up := (after_walk - planet.global_position).normalized()
+	_check(
+		rig_up.dot(surface_up) > 0.9,
+		"walking reorients the rig to the surface normal (dot=%.2f)" % rig_up.dot(surface_up)
+	)
+
 	var walked := before_walk.distance_to(after_walk)
 	_check(walked > 1.0, "walking actually moves the ship over the planet (%.2f m)" % walked)
 	# The invariant is now the 3D sphere radius, not a flat ring.
@@ -162,6 +171,10 @@ func _run_checks(scene: Node) -> void:
 	# --- takeoff + grace ---
 	flight.call("take_off")
 	_check(int(flight.get("state")) == STATE_FLYING, "B/Y takes off")
+	_check(
+		(flight as Node3D).global_basis.y.dot(Vector3.UP) > 0.999,
+		"takeoff levels the rig back upright for flight"
+	)
 	var launched: Vector3 = flight.call("get_spacecraft_world_position")
 	_check(absf(launched.y - 10.0) < 0.01, "takeoff returns to the flight plane (y=%.2f)" % launched.y)
 	var clearance := Vector2(launched.x, launched.z).distance_to(

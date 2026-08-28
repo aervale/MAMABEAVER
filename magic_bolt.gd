@@ -133,8 +133,8 @@ func _build_spark_trail() -> void:
 	process.emission_sphere_radius = 0.12
 	process.direction = Vector3.ZERO
 	process.spread = 180.0
-	process.initial_velocity_min = 0.4
-	process.initial_velocity_max = 1.6
+	process.initial_velocity_min = 0.6
+	process.initial_velocity_max = 3.2
 	process.gravity = Vector3.ZERO
 	process.damping_min = 1.0
 	process.damping_max = 3.0
@@ -158,13 +158,13 @@ func _build_spark_trail() -> void:
 	spark_material.disable_receive_shadows = true
 
 	var spark_mesh := QuadMesh.new()
-	spark_mesh.size = Vector2(0.09, 0.09)
+	spark_mesh.size = Vector2(0.12, 0.12)
 	spark_mesh.material = spark_material
 
 	var sparks := GPUParticles3D.new()
 	sparks.name = "SparkTrail"
-	sparks.amount = 40
-	sparks.lifetime = 0.55
+	sparks.amount = 90
+	sparks.lifetime = 0.75
 	sparks.local_coords = false
 	sparks.visibility_aabb = AABB(Vector3.ONE * -30.0, Vector3.ONE * 60.0)
 	sparks.process_material = process
@@ -179,9 +179,9 @@ func _burst(color: Color, amount: int) -> void:
 	var dust := SurfaceDustScript.new() as SurfaceDust
 	dust.surface_normal = -velocity.normalized() if velocity.length() > 0.01 else Vector3.UP
 	dust.burst_amount = amount
-	dust.burst_speed = 4.5
-	dust.puff_lifetime = 0.5
-	dust.puff_size = 0.2
+	dust.burst_speed = 7.0
+	dust.puff_lifetime = 0.6
+	dust.puff_size = 0.26
 	dust.dust_color = color
 	var scene := get_tree().current_scene
 	if scene == null:
@@ -229,7 +229,7 @@ func _physics_process(delta: float) -> void:
 			if diameter == null:
 				continue
 			if global_position.distance_to(planet.global_position) <= float(diameter) * 0.5:
-				_burst(Color(0.5, 0.85, 1.0, 0.5), 16)
+				_burst(Color(0.5, 0.85, 1.0, 0.6), 38)
 				queue_free()
 				return
 
@@ -248,5 +248,5 @@ func _physics_process(delta: float) -> void:
 		var beaver: Node3D = _director.call("find_beaver_near", global_position, hit_radius)
 		if beaver != null:
 			_director.call("begin_tractor", beaver, _flight)
-			_burst(Color(0.6, 0.95, 1.0, 0.55), 26)
+			_burst(Color(0.6, 0.95, 1.0, 0.7), 55)
 			queue_free()

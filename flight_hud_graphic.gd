@@ -8,12 +8,13 @@
 # dropped into any viewport without wiring.
 #
 # Layout, left to right:
-#   * state lamp      — cyan flying / amber landed / red crashed / green won
-#   * fuel arc        — sweeping gauge, turns amber then red as it drains
+#   * beaver vessel   — a beaver silhouette that FILLS from the feet up as
+#                       you collect them, the way the reference mock does
+#   * BEAVERS COLLECTED n/m
+#   * SPACECRAFT FUEL — segmented bar plus a large percentage
 #   * speed bar       — fills toward the landing threshold; green while slow
 #                       enough to land, red once a touchdown would be fatal
-#   * beaver pips     — one dot per beaver: filled green = delivered,
-#                       filled amber = aboard as cargo, hollow = still out
+#   * state lamp      — cyan flying / amber landed / red crashed / green won
 #   * warning chevrons— only when the controller reports an impact warning
 #
 # Rendered to a texture on a head-locked quad by vr_hud_presenter.gd.
@@ -63,19 +64,44 @@ func _draw() -> void:
 	draw_rect(plate, COLOR_PANEL)
 	draw_rect(plate, Color(COLOR_FRAME, 0.5), false, 1.5)
 
+	var font := ThemeDB.fallback_font
 	var centre_y := size.y * 0.5
-	var cursor := 26.0
+	var cursor := 20.0
 
-	_draw_state_lamp(Vector2(cursor, centre_y), accent, state)
-	cursor += 42.0
+	# 1. The filling beaver, the centrepiece of the reference UI.
+	_draw_beaver_vessel(Rect2(cursor, centre_y - 40.0, 66.0, 80.0))
+	cursor += 82.0
 
-	_draw_fuel_arc(Vector2(cursor + 22.0, centre_y))
-	cursor += 78.0
+	# 2. Collected tally.
+	var collected := 0
+	var total := 0
+	if _beaver_director != null and _beaver_director.has_method("get_total_count"):
+		total = int(_beaver_director.call("get_total_count"))
+		collected = int(_beaver_director.call("get_delivered_count")) \
+			+ int(_beaver_director.call("get_cargo_count"))
+	draw_string(
+		font,
+		Vector2(cursor, centre_y - 14.0),
+		"BEAVERS COLLECTED",
+		HORIZONTAL_ALIGNMENT_LEFT, -1.0, 15, Color(0.55, 0.95, 1.0)
+	)
+	draw_string(
+		font,
+		Vector2(cursor, centre_y + 16.0),
+		"%d/%d" % [collected, total],
+		HORIZONTAL_ALIGNMENT_LEFT, -1.0, 26, COLOR_FLYING
+	)
+	cursor += 210.0
 
-	_draw_speed_bar(Rect2(cursor, centre_y - 15.0, 108.0, 30.0))
-	cursor += 124.0
+	# 3. Segmented fuel bar + big percentage.
+	_draw_segmented_fuel(Rect2(cursor, centre_y - 26.0, 250.0, 52.0))
+	cursor += 268.0
 
-	_draw_beaver_pips(Rect2(cursor, centre_y - 14.0, size.x - cursor - 22.0, 28.0))
+	# 4. Approach speed against the landing limit.
+	_draw_speed_bar(Rect2(cursor, centre_y - 13.0, 118.0, 26.0))
+	cursor += 134.0
+
+	_draw_state_lamp(Vector2(cursor + 18.0, centre_y), accent, state)
 
 	if not warning.is_empty():
 		_draw_warning()
@@ -102,6 +128,97 @@ func _draw_state_lamp(centre: Vector2, accent: Color, state: int) -> void:
 		draw_line(centre + Vector2(-2, 5), centre + Vector2(7, -6), accent, 3.0)
 	else:
 		draw_circle(centre, 5.0, accent)
+
+
+## Beaver silhouette that fills from the feet up with collection progress:
+## a hollow neon outline that becomes solid as the hold fills.
+func _draw_beaver_vessel(rect: Rect2) -> void:
+	var ratio := 0.0
+	if _beaver_director != null and _beaver_director.has_method("get_total_count"):
+		var total := maxi(int(_beaver_director.call("get_total_count")), 1)
+		var have := int(_beaver_director.call("get_delivered_count")) \
+			+ int(_beaver_director.call("get_cargo_count"))
+		ratio = clampf(float(have) / float(total), 0.0, 1.0)
+
+	var outline := _beaver_outline(rect)
+
+	# Fill portion: clip the silhouette to the bottom `ratio` of its height
+	# by intersecting the polygon with a rising waterline.
+	if ratio > 0.001:
+		var waterline := rect.position.y + rect.size.y * (1.0 - ratio)
+		var filled := PackedVector2Array()
+		for i in outline.size():
+			var current := outline[i]
+			var next := outline[(i + 1) % outline.size()]
+			if current.y >= waterline:
+				filled.append(current)
+			# Cross the waterline: insert the exact intersection point so
+			# the fill edge is flat rather than stepped.
+			if (current.y >= waterline) != (next.y >= waterline):
+				var t := (waterline - current.y) / (next.y - current.y)
+				filled.append(current.lerp(next, t))
+		if filled.size() >= 3:
+			draw_colored_polygon(filled, Color(0.3, 0.95, 1.0, 0.55))
+
+	var loop := outline.duplicate()
+	loop.append(outline[0])
+	draw_polyline(loop, Color(1.0, 0.3, 0.32, 0.95), 2.0)
+
+
+## Chunky beaver profile (head, ear, muzzle, body, tail) as a polygon in
+## the given rect. Deliberately simple so it reads at HUD scale.
+func _beaver_outline(rect: Rect2) -> PackedVector2Array:
+	var unit := PackedVector2Array([
+		Vector2(0.46, 0.02), Vector2(0.62, 0.06), Vector2(0.72, 0.17),
+		Vector2(0.74, 0.28), Vector2(0.88, 0.33), Vector2(0.95, 0.42),
+		Vector2(0.86, 0.47), Vector2(0.74, 0.45), Vector2(0.78, 0.60),
+		Vector2(0.86, 0.78), Vector2(0.80, 0.95), Vector2(0.55, 1.0),
+		Vector2(0.28, 0.98), Vector2(0.14, 0.86), Vector2(0.10, 0.66),
+		Vector2(0.18, 0.48), Vector2(0.26, 0.30), Vector2(0.22, 0.16),
+		Vector2(0.32, 0.10),
+	])
+	var points := PackedVector2Array()
+	for p in unit:
+		points.append(rect.position + Vector2(p.x * rect.size.x, p.y * rect.size.y))
+	return points
+
+
+## Segmented bar + large percentage, matching the reference readout.
+func _draw_segmented_fuel(rect: Rect2) -> void:
+	var font := ThemeDB.fallback_font
+	var maximum := maxf(float(_flight.get("maximum_fuel")), 0.001)
+	var ratio := clampf(float(_flight.get("fuel")) / maximum, 0.0, 1.0)
+	var color := COLOR_FLYING
+	if ratio < 0.2:
+		color = COLOR_CRASHED
+	elif ratio < 0.45:
+		color = COLOR_LANDED
+
+	draw_string(
+		font, rect.position + Vector2(0.0, 12.0), "SPACECRAFT FUEL",
+		HORIZONTAL_ALIGNMENT_LEFT, -1.0, 15, Color(0.55, 0.95, 1.0)
+	)
+
+	var bar := Rect2(rect.position + Vector2(0.0, 22.0), Vector2(rect.size.x - 74.0, 24.0))
+	draw_rect(bar, Color(0.02, 0.1, 0.14, 0.9))
+	draw_rect(bar, Color(color, 0.7), false, 1.5)
+
+	# 18 discrete cells rather than a smooth fill.
+	var cells := 18
+	var cell_width := (bar.size.x - 6.0) / float(cells)
+	var lit := int(round(ratio * float(cells)))
+	for i in cells:
+		var cell := Rect2(
+			bar.position + Vector2(3.0 + float(i) * cell_width, 3.0),
+			Vector2(cell_width - 2.0, bar.size.y - 6.0)
+		)
+		draw_rect(cell, Color(color, 0.9) if i < lit else Color(0.1, 0.3, 0.36, 0.5))
+
+	draw_string(
+		font, rect.position + Vector2(rect.size.x - 66.0, 44.0),
+		"%d%%" % int(round(ratio * 100.0)),
+		HORIZONTAL_ALIGNMENT_LEFT, -1.0, 30, color
+	)
 
 
 ## Sweeping arc gauge: full ring = full tank.
@@ -155,34 +272,6 @@ func _draw_speed_bar(rect: Rect2) -> void:
 		var y := rect.position.y + rect.size.y * 0.5
 		draw_line(Vector2(x, y - 5.0), Vector2(x + 5.0, y), Color(1, 1, 1, 0.35), 2.0)
 		draw_line(Vector2(x + 5.0, y), Vector2(x, y + 5.0), Color(1, 1, 1, 0.35), 2.0)
-
-
-## One pip per beaver, wrapped over two rows if needed.
-func _draw_beaver_pips(rect: Rect2) -> void:
-	if _beaver_director == null or not _beaver_director.has_method("get_total_count"):
-		return
-	var total := int(_beaver_director.call("get_total_count"))
-	if total <= 0:
-		return
-	var delivered := int(_beaver_director.call("get_delivered_count"))
-	var cargo := int(_beaver_director.call("get_cargo_count"))
-
-	var per_row := maxi(1, int(rect.size.x / 11.0))
-	var rows := int(ceil(float(total) / float(per_row)))
-	var radius := 3.6
-	for index in total:
-		var row := index / per_row
-		var column := index % per_row
-		var centre := rect.position + Vector2(
-			radius + float(column) * 11.0,
-			rect.size.y * 0.5 + (float(row) - float(rows - 1) * 0.5) * 11.0
-		)
-		if index < delivered:
-			draw_circle(centre, radius, COLOR_WON)  # banked at MIT
-		elif index < delivered + cargo:
-			draw_circle(centre, radius, COLOR_LANDED)  # riding along
-		else:
-			draw_arc(centre, radius, 0.0, TAU, 12, Color(0.5, 0.75, 0.85, 0.75), 1.5)
 
 
 ## Impact alarm: hazard bars along the top and bottom of the strip.
