@@ -23,6 +23,8 @@
 [ext_resource type="Script" path="res://vr_hud_presenter.gd" id="23_vrhud"]
 [ext_resource type="Script" path="res://spacecraft_visual.gd" id="24_ship"]
 [ext_resource type="AudioStream" path="res://audio/background_music.wav" id="25_bgm"]
+[ext_resource type="Script" path="res://comfort_vignette.gd" id="26_comfort"]
+[ext_resource type="Shader" path="res://comfort_vignette.gdshader" id="27_comfort_shader"]
 
 [sub_resource type="StandardMaterial3D" id="Material_ship_marker"]
 albedo_color = Color(0.08, 0.75, 1, 1)
@@ -34,6 +36,16 @@ emission_energy_multiplier = 3.0
 material = SubResource("Material_ship_marker")
 radius = 1.0
 height = 2.0
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_comfort"]
+resource_local_to_scene = true
+render_priority = 127
+shader = ExtResource("27_comfort_shader")
+shader_parameter/strength = 0.0
+
+[sub_resource type="QuadMesh" id="QuadMesh_comfort"]
+material = SubResource("ShaderMaterial_comfort")
+size = Vector2(2.2, 2.2)
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_starsky"]
 shader = ExtResource("20_starsky")
@@ -96,6 +108,14 @@ play_area_max = Vector2(220, 220)
 beaver_director_path = NodePath("../BeaverExhibit")
 
 [node name="XRCamera3D" type="XRCamera3D" parent="XROrigin3D" unique_id=807774865]
+
+[node name="ComfortVignette" type="MeshInstance3D" parent="XROrigin3D/XRCamera3D"]
+position = Vector3(0, 0, -0.55)
+cast_shadow = 0
+extra_cull_margin = 10.0
+mesh = SubResource("QuadMesh_comfort")
+script = ExtResource("26_comfort")
+flight_path = NodePath("../..")
 
 [node name="FlightHUD" type="Node3D" parent="XROrigin3D/XRCamera3D" unique_id=1402147676]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.34, -1.4)
