@@ -79,7 +79,7 @@ func _apply(enable: bool) -> void:
 		else:
 			_environment.background_mode = _original_background
 
-	# visibility only. a hidden floor still collides, props land on it fine
+	# This changes visibility only; it does not remove physics from hidden nodes.
 	for i in _hidden.size():
 		_hidden[i].visible = _hidden_was_visible[i] and not enable
 

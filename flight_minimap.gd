@@ -11,6 +11,10 @@
 # duck-typed (target_diameter_meters, capture_radius, ...), the same
 # contracts spaceship_flight.gd uses.
 #
+# It also overlays live flight telemetry published by the controller: the
+# RK4 predicted-flow line (color-coded SAFE cyan / IMPACT red / GOAL green)
+# and a fuel gauge in the readout row.
+#
 # GEOMETRY NOTE: the ship flies at a fixed altitude, so every circle drawn is
 # a sphere's HORIZONTAL CROSS-SECTION at that altitude, not its full radius:
 #   r_drawn = sqrt(R^2 - dz^2),  dz = |flight altitude - body center height|.
@@ -50,6 +54,7 @@ func _draw() -> void:
 
 	draw_rect(Rect2(Vector2.ZERO, map_size), Color(0.012, 0.024, 0.055, 0.94))
 	_draw_grid(map_size)
+	_draw_predicted_flow(map_size)
 	_draw_black_holes(map_size)
 	_draw_obstacles(map_size)
 	_draw_destination(map_size)
@@ -74,6 +79,35 @@ func _draw_grid(map_size: Vector2) -> void:
 		draw_line(vertical_from, vertical_to, color, width)
 		draw_line(horizontal_from, horizontal_to, color, width)
 		coordinate += step
+
+
+func _draw_predicted_flow(map_size: Vector2) -> void:
+	if _flight == null or not _flight.has_method("get_predicted_flow_points"):
+		return
+	var flow_points: PackedVector2Array = _flight.call("get_predicted_flow_points")
+	if flow_points.size() < 2:
+		return
+
+	var map_points := PackedVector2Array()
+	for point in flow_points:
+		map_points.append(_world_to_map(point, map_size))
+
+	var flow_result := "SAFE"
+	if _flight.has_method("get_predicted_flow_result"):
+		flow_result = String(_flight.call("get_predicted_flow_result"))
+	var flow_color := Color(0.18, 0.82, 1.0, 0.95)
+	match flow_result:
+		"IMPACT":
+			flow_color = Color(1.0, 0.18, 0.16, 0.98)
+		"GOAL":
+			flow_color = Color(0.16, 1.0, 0.42, 0.98)
+		"STOPPED":
+			flow_color = Color(0.58, 0.64, 0.72, 0.78)
+
+	# A dark underlay keeps the ODE flow visible across grid lines and bodies.
+	draw_polyline(map_points, Color(0.0, 0.015, 0.04, 0.9), 5.5, true)
+	draw_polyline(map_points, flow_color, 2.2, true)
+	draw_circle(map_points[map_points.size() - 1], 3.2, flow_color)
 
 
 func _draw_obstacles(map_size: Vector2) -> void:
@@ -223,11 +257,58 @@ func _draw_readout(map_size: Vector2) -> void:
 	var font := ThemeDB.fallback_font
 	var font_size := maxi(13, int(minf(map_size.x, map_size.y) * 0.045))
 	var coordinate_text := "XY  --, --"
+	var fuel_value := 0.0
+	var maximum_fuel_value := 0.0
+	var fuel_ratio := 0.0
+	var flow_text := "FLOW  --"
 	if _flight != null:
 		var coordinates := _get_flight_coordinates()
 		coordinate_text = "XY  %.1f, %.1f" % [coordinates.x, coordinates.y]
-	draw_rect(Rect2(6, 6, minf(205.0, map_size.x - 12.0), font_size + 10.0), Color(0.01, 0.02, 0.05, 0.82))
+		fuel_value = float(_flight.get("fuel"))
+		maximum_fuel_value = float(_flight.get("maximum_fuel"))
+		if _flight.has_method("get_fuel_ratio"):
+			fuel_ratio = float(_flight.call("get_fuel_ratio"))
+		if _flight.has_method("get_predicted_flow_result"):
+			flow_text = "FLOW φ(t) · %s" % String(_flight.call("get_predicted_flow_result"))
+
+	var readout_height := float(font_size + 10)
+	var left_width := map_size.x * 0.52 - 9.0
+	var right_x := map_size.x * 0.52 + 3.0
+	var right_width := map_size.x - right_x - 6.0
+	draw_rect(Rect2(6, 6, left_width, readout_height), Color(0.01, 0.02, 0.05, 0.86))
 	draw_string(font, Vector2(12, font_size + 7), coordinate_text, HORIZONTAL_ALIGNMENT_LEFT, -1.0, font_size, Color(0.76, 0.93, 1.0))
+
+	var fuel_color := Color(0.2, 1.0, 0.5, 0.92)
+	if fuel_ratio < 0.2:
+		fuel_color = Color(1.0, 0.16, 0.12, 0.96)
+	elif fuel_ratio < 0.5:
+		fuel_color = Color(1.0, 0.72, 0.12, 0.95)
+	var fuel_rect := Rect2(right_x, 6, right_width, readout_height)
+	draw_rect(fuel_rect, Color(0.01, 0.02, 0.05, 0.9))
+	draw_rect(
+		Rect2(right_x + 2.0, 8.0, maxf(0.0, (right_width - 4.0) * fuel_ratio), readout_height - 4.0),
+		Color(fuel_color.r, fuel_color.g, fuel_color.b, 0.24)
+	)
+	draw_string(
+		font,
+		Vector2(right_x + 6.0, font_size + 7),
+		"FUEL %.0f/%.0f" % [fuel_value, maximum_fuel_value],
+		HORIZONTAL_ALIGNMENT_LEFT,
+		-1.0,
+		font_size,
+		fuel_color
+	)
+
+	var flow_result := ""
+	if _flight != null and _flight.has_method("get_predicted_flow_result"):
+		flow_result = String(_flight.call("get_predicted_flow_result"))
+	var flow_color := Color(0.35, 0.86, 1.0, 0.95)
+	if flow_result == "IMPACT":
+		flow_color = Color(1.0, 0.28, 0.24, 0.98)
+	elif flow_result == "GOAL":
+		flow_color = Color(0.22, 1.0, 0.48, 0.98)
+	draw_rect(Rect2(6, map_size.y - font_size - 18.0, minf(190.0, map_size.x - 48.0), font_size + 10.0), Color(0.01, 0.02, 0.05, 0.82))
+	draw_string(font, Vector2(12, map_size.y - 10.0), flow_text, HORIZONTAL_ALIGNMENT_LEFT, -1.0, font_size, flow_color)
 	draw_string(font, Vector2(map_size.x - 32, map_size.y - 8), "X", HORIZONTAL_ALIGNMENT_LEFT, -1.0, font_size, Color(0.45, 0.76, 1.0))
 	draw_string(font, Vector2(8, font_size * 2.5), "Y", HORIZONTAL_ALIGNMENT_LEFT, -1.0, font_size, Color(0.45, 0.76, 1.0))
 

@@ -74,6 +74,8 @@ obstacles_root_path = NodePath("../MoonExhibit")
 black_holes_root_path = NodePath("../BlackHoleExhibit")
 vr_status_path = NodePath("XRCamera3D/FlightHUD")
 desktop_status_path = NodePath("../DesktopHUD/Panel/Content/Mode")
+play_area_min = Vector2(-20, -20)
+play_area_max = Vector2(220, 220)
 
 [node name="XRCamera3D" type="XRCamera3D" parent="XROrigin3D" unique_id=807774865]
 
@@ -82,7 +84,8 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.32, -1.5)
 pixel_size = 0.0018
 no_depth_test = true
 modulate = Color(0.7, 0.9, 1, 0.9)
-text = "POS  0.0, 0.0   ALT  10
+text = "POS 0.0, 0.0   ALT 10
+SPD 0.0   GRAV 0.0   FUEL 100/100
 GOAL 200, 200"
 font_size = 28
 outline_size = 6
@@ -384,7 +387,7 @@ text = "Ship: (0, 0, 10)  ·  Goal: (200, 200, 10)"
 [node name="Controls" type="Label" parent="DesktopHUD/Panel/Content" unique_id=156795761]
 layout_mode = 2
 theme_override_colors/font_color = Color(0.66, 0.72, 0.84, 1)
-text = "WASD: fly   ·   Drag: orbit   ·   Wheel: zoom   ·   R: restart   ·   Esc: quit"
+text = "B/Y: start gravity   ·   WASD: fly   ·   Drag: orbit   ·   R: reset   ·   Esc: quit"
 
 [node name="Credit" type="Label" parent="DesktopHUD/Panel/Content" unique_id=709426833]
 layout_mode = 2
@@ -409,3 +412,5 @@ custom_minimum_size = Vector2(280, 280)
 layout_mode = 2
 mouse_filter = 2
 script = ExtResource("15_minimap")
+map_min = Vector2(-20, -20)
+map_max = Vector2(220, 220)

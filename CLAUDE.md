@@ -24,7 +24,11 @@ black holes whose gravity pulls you off course. Play area is (-20, -20) to
 
 `main.gd` (root node) picks HEADSET or DESKTOP mode once at startup and
 toggles cameras/HUDs. `spaceship_flight.gd` (on `XROrigin3D`) is the whole
-game loop: thumbstick/WASD input, gravity, collision, arrival, restart.
+game loop: thumbstick/WASD input, gravity, collision, arrival, restart —
+plus a fuel tank (thrust burns fuel; empty = coasting), a WAITING state
+(gravity engages only after B/Y so you don't drift into a planet at spawn),
+and an RK4 flow predictor that publishes a projected path + SAFE/IMPACT/GOAL
+verdict the minimap draws.
 Planets (`moon_presenter.gd`) and black holes (`black_hole.gd`) are
 discovered by **duck typing**, not groups: anything under `MoonExhibit` with a
 `target_diameter_meters` property is a planet (gravity `a = C·r³/d²`);
@@ -64,6 +68,7 @@ altitude (`√(R² − dz²)`).
 | `desktop_orbit_camera.gd` | No-headset orbit camera. |
 | `starfield_sky.gdshader` | Procedural deep-space sky (stars + nebula band). |
 | `xr_hands.gd` / `xr_visuals.gd` / `xr_passthrough.gd` | Hand tracking, controller models, passthrough. |
+| `tools/validate_flow_feature.gd` | Headless validation script for the RK4 flow predictor. |
 | `gdscript_tutorial.gd` | Not part of the game — GDScript primer for the team. |
 | `source/`, `models/` | CC-BY Sketchfab moon + black hole, Quest controller GLBs. See `MODEL_ATTRIBUTION.md`. |
 
@@ -74,11 +79,11 @@ things silently): `XROrigin3D`, `MoonExhibit`, `BlackHoleExhibit`, `SceneryExhib
 
 ## Running
 
-- **Desktop:** open in Godot 4.7.2, press F5. Mouse-drag orbits, WASD flies,
-  R restarts, Esc quits. macOS never attempts OpenXR (platform override).
+- **Desktop:** open in Godot 4.7.2, press F5. B/Y engages the gravity field
+  (starts the run), WASD flies, mouse-drag orbits, R restarts, Esc quits. macOS never attempts OpenXR (platform override).
 - **Quest:** Android preset `Meta Quest 3` in `export_presets.cfg`; needs the
   `addons/godotopenxrvendors` plugin + Android export templates. One-click
-  deploy or export APK. Restart in-headset: A/X or trigger.
+  deploy or export APK. In-headset: B/Y starts, A/X or trigger restarts.
 
 ## Gotchas
 
