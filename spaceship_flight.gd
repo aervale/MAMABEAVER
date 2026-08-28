@@ -135,6 +135,10 @@ const MAP_EXPAND_BUTTONS: Array[StringName] = [
 ## Touch a planet below this speed to land instead of crash.
 @export_range(0.5, 15.0, 0.5) var landing_speed_threshold := 8.0
 @export_range(1.0, 15.0, 0.5) var takeoff_speed := 5.0
+## Extra horizontal distance beyond the planet collision cross-section.
+## A generous gap prevents strong gravity from pulling the ship straight
+## back into the surface as soon as the takeoff grace period ends.
+@export_range(0.5, 10.0, 0.25) var takeoff_clearance_margin := 3.0
 ## After takeoff, the departed planet is ignored this long (no re-collide).
 @export_range(0.1, 3.0, 0.05) var takeoff_grace_seconds := 0.75
 @export_range(5.0, 60.0, 1.0) var bolt_speed := 36.0
@@ -799,7 +803,10 @@ func take_off() -> void:
 			var contact := float(diameter) * 0.5 + spacecraft_radius
 			var dy := start_position.z - center.y
 			# Cross-section radius of the planet at the flight altitude.
-			var clear_radius := sqrt(maxf(contact * contact - dy * dy, 0.01)) + 0.75
+			var clear_radius := (
+				sqrt(maxf(contact * contact - dy * dy, 0.01))
+				+ takeoff_clearance_margin
+			)
 			var target := Vector2(center.x, center.z) + away * clear_radius
 			global_position += Vector3(
 				target.x - launch_from.x,

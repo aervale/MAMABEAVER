@@ -220,7 +220,16 @@ func _run_checks(scene: Node) -> void:
 	_check(absf(launched.y - 10.0) < 0.01, "takeoff returns to the flight plane (y=%.2f)" % launched.y)
 	var clearance := Vector2(launched.x, launched.z).distance_to(
 		Vector2(planet.global_position.x, planet.global_position.z))
-	_check(clearance > 5.0, "takeoff exits clear of the planet cross-section (%.2f m)" % clearance)
+	var contact_radius := float(planet.get("target_diameter_meters")) * 0.5 + float(flight.get("spacecraft_radius"))
+	var height_delta := float(flight.get("start_position").z) - planet.global_position.y
+	var expected_clearance := (
+		sqrt(maxf(contact_radius * contact_radius - height_delta * height_delta, 0.01))
+		+ float(flight.get("takeoff_clearance_margin"))
+	)
+	_check(
+		clearance >= expected_clearance - 0.01,
+		"takeoff includes the full safety margin (%.2f / %.2f m)" % [clearance, expected_clearance]
+	)
 	if ship_visual != null:
 		# A single update must align exactly with VELOCITY. A smoothed turn can
 		# lag toward the former heading and be mistaken for acceleration-following.
@@ -232,8 +241,18 @@ func _run_checks(scene: Node) -> void:
 			ship_forward.dot(expected_forward) > 0.9999,
 			"visible ship heading exactly matches velocity, without acceleration-like lag"
 		)
-	await physics_frame
-	_check(int(flight.get("state")) == STATE_FLYING, "takeoff grace prevents instant re-collision")
+	# Continue beyond the grace window: the farther spawn must keep the ship
+	# clear even after collision with the departed planet is re-enabled.
+	var safety_frames := int(ceil(
+		(float(flight.get("takeoff_grace_seconds")) + 0.5)
+		* Engine.physics_ticks_per_second
+	))
+	for frame in safety_frames:
+		await physics_frame
+	_check(
+		int(flight.get("state")) == STATE_FLYING,
+		"takeoff remains clear after the grace period"
+	)
 	# Firing in flight must add nothing (an absolute count is wrong here:
 	# earlier landed shots are legitimately still in the air).
 	var bolts_before := _count_bolts(scene)
