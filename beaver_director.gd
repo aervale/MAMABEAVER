@@ -28,7 +28,7 @@ extends Node3D
 class_name BeaverDirector
 
 const BeaverScript = preload("res://beaver.gd")
-const MODEL_PATH := "res://models/beaver/beaver.glb"
+const MODEL_PATH := "res://models/beaver/Beaver.fbx"
 
 @export_range(1, 12, 1) var beavers_per_planet := 5
 ## How many beavers may use the imported 17.5k-tri model (Quest budget).

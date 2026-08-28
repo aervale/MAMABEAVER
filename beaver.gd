@@ -191,36 +191,82 @@ func _build_imported_visual() -> void:
 	_start_model_animation(imported)
 
 
+## Animation clips shipped ALONGSIDE the mesh rather than inside it. The
+## Sketchfab beaver splits every action into its own FBX, so the mesh file
+## only carries a bind pose ("Take 001") and the real motion has to be
+## merged onto its AnimationPlayer at runtime.
+const EXTRA_ANIMATIONS := [
+	"res://models/beaver/animations/Idle_Walk.fbx",
+	"res://models/beaver/animations/Walk.fbx",
+]
+
+
+## Copy clips out of the standalone animation files onto our own player.
+## Both files are exported from the same rig, so the track paths line up.
+func _merge_external_animations() -> void:
+	if _animator == null:
+		return
+	var library := _animator.get_animation_library("")
+	if library == null:
+		library = AnimationLibrary.new()
+		_animator.add_animation_library("", library)
+
+	for path in EXTRA_ANIMATIONS:
+		if not ResourceLoader.exists(path):
+			continue
+		var packed := load(path) as PackedScene
+		if packed == null:
+			continue
+		var temporary := packed.instantiate()
+		var source := _find_animation_player(temporary)
+		if source != null:
+			for clip_name in source.get_animation_list():
+				var clip := source.get_animation(clip_name)
+				if clip != null and not library.has_animation(clip_name):
+					library.add_animation(clip_name, clip.duplicate())
+		# The donor scene exists only to hand over its clips.
+		temporary.queue_free()
+
+
+func _find_animation_player(root: Node) -> AnimationPlayer:
+	var pending: Array[Node] = [root]
+	while not pending.is_empty():
+		var node: Node = pending.pop_back()
+		if node is AnimationPlayer:
+			return node as AnimationPlayer
+		for child in node.get_children():
+			pending.append(child)
+	return null
+
+
 ## Play the imported model's idle animation on a loop, if it has one.
 ##
-## glTF exports name their clips whatever the original rig used, so rather
-## than hardcoding a name we prefer anything that looks like an idle and
+## Exports name their clips whatever the original rig used, so rather than
+## hardcoding a name we prefer anything that looks like an idle and
 ## otherwise fall back to the first clip. The loop mode is forced on: many
 ## exports ship clips set to play once, which would leave the beaver frozen
 ## on its last frame after a second or two.
 func _start_model_animation(model_root: Node) -> void:
-	var pending: Array[Node] = [model_root]
-	while not pending.is_empty():
-		var node: Node = pending.pop_back()
-		if node is AnimationPlayer:
-			_animator = node as AnimationPlayer
-			break
-		for child in node.get_children():
-			pending.append(child)
+	_animator = _find_animation_player(model_root)
 	if _animator == null:
 		return
+	_merge_external_animations()
 
 	var clips := _animator.get_animation_list()
 	if clips.is_empty():
 		_animator = null
 		return
 
+	# "Take 001" is the FBX bind pose, not motion — never pick it if a real
+	# clip is available.
 	var chosen: String = clips[0]
 	for clip in clips:
 		var lowered := String(clip).to_lower()
 		if lowered.contains("idle") or lowered.contains("loop"):
 			chosen = clip
 			break
+		if chosen.to_lower().begins_with("take") and not lowered.begins_with("take"):
+			chosen = clip
 
 	var animation := _animator.get_animation(chosen)
 	if animation != null:
