@@ -102,12 +102,12 @@ script = ExtResource("16_vr_minimap")
 
 [node name="XRControllerLeft" type="XRController3D" parent="XROrigin3D" unique_id=130472835]
 tracker = &"left_hand"
-pose = &"grip"
+pose = &"aim"
 show_when_tracked = true
 
 [node name="XRControllerRight" type="XRController3D" parent="XROrigin3D" unique_id=991621539]
 tracker = &"right_hand"
-pose = &"grip"
+pose = &"aim"
 show_when_tracked = true
 
 [node name="XRVisuals" type="Node3D" parent="XROrigin3D" unique_id=1921252323]

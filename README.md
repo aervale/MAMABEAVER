@@ -10,7 +10,8 @@ gravity fields and collision volumes of ten planets and five black holes.
 - WASD: desktop thrust for no-headset testing.
 - Quest `B/Y`, or desktop `B/Y`: engage gravity and begin flight from the
   initial waiting state.
-- A/X, trigger, or desktop `R`: restart after collision, capture, or arrival.
+- A/X or desktop `R`: restart after collision, capture, or arrival.
+- Trigger while landed: fire a magic bolt along the controller's OpenXR aim ray.
 - Fuel starts at `100` and full thrust consumes `8` units per second.
 - Coasting consumes no fuel; gravity and inertia continue to move the ship.
 - The 3D floor mesh and floor collision are removed for an open-space view.

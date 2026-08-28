@@ -11,9 +11,10 @@
 #       logical Z (altitude) -> world Y (height, LOCKED to start_position.z)
 #   _logical_to_world() performs that swap. The ship never changes altitude.
 #
-# WHO IS "THE SHIP": the player's head. get_spacecraft_world_position() uses
-# the XRCamera3D's horizontal position (room-scale walking counts as moving!)
-# with altitude clamped. Collision, arrival and the minimap all use it.
+# WHO IS "THE SHIP": the XROrigin3D itself. The tracked camera can move a
+# little inside that rig without changing the physics anchor. Collision,
+# arrival, surface walking, the visible hull and the minimap therefore agree
+# on one position instead of slowly separating through room-scale offsets.
 #
 # DISCOVERING HAZARDS (duck typing — no groups, no signals):
 #   * Planets = children of MoonExhibit exposing a `target_diameter_meters`
@@ -951,10 +952,16 @@ func _poll_vr_fire() -> void:
 		var controller: XRController3D = controllers[index]
 		if controller == null:
 			continue
-		var pressed := controller.get_float(&"trigger") >= 0.6
+		# Quest exposes the trigger as an analogue value. A lower engagement
+		# threshold makes a normal pull reliable; release must still cross 0.2
+		# before the next shot, which prevents noisy values from double-firing.
+		var trigger_value := controller.get_float(&"trigger")
+		var pressed := trigger_value >= (0.2 if _fire_was_pressed[index] else 0.35)
 		for action in FIRE_BUTTONS:
 			pressed = pressed or controller.is_button_pressed(action)
 		if pressed and not _fire_was_pressed[index]:
+			# The controller nodes use OpenXR's calibrated aim pose, so -Z is
+			# the actual pointing ray instead of the palm-oriented grip axis.
 			_try_fire(
 				controller.global_position - controller.global_basis.z * 0.2,
 				-controller.global_basis.z
@@ -1153,16 +1160,12 @@ func get_flight_coordinates() -> Vector3:
 
 
 func get_spacecraft_world_position() -> Vector3:
-	# Use the viewer's horizontal position so the minimap and collision
-	# checks match the first-person view.
-	# Altitude is normally locked to logical Z (=10) — the whole game is a
-	# fixed-altitude field. The ONE exception is LANDED: you are standing on
-	# a sphere, so the real height matters for walking, bolt origins and
-	# where a tractored beaver flies to. take_off() restores the lock.
-	var source: Node3D = _flight_camera if _flight_camera != null else self
+	# The rig origin is the ship's authoritative anchor. Head tracking remains
+	# free inside the cockpit, but leaning or room-scale motion cannot make the
+	# physics position drift away from the visible hull.
 	if state == FlightState.LANDED:
-		return source.global_position
-	return Vector3(source.global_position.x, start_position.z, source.global_position.z)
+		return global_position
+	return Vector3(global_position.x, start_position.z, global_position.z)
 
 
 func get_view_heading() -> Vector2:

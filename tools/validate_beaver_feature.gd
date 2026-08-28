@@ -38,13 +38,36 @@ func _run_checks(scene: Node) -> void:
 	var flight := scene.get_node_or_null("XROrigin3D")
 	var director := scene.get_node_or_null("BeaverExhibit")
 	var planet := scene.get_node_or_null("MoonExhibit/Planet01") as Node3D
+	var xr_camera := scene.get_node_or_null("XROrigin3D/XRCamera3D") as XRCamera3D
+	var ship_visual := scene.get_node_or_null("XROrigin3D/Spacecraft") as Node3D
+	var left_controller := scene.get_node_or_null("XROrigin3D/XRControllerLeft") as XRController3D
+	var right_controller := scene.get_node_or_null("XROrigin3D/XRControllerRight") as XRController3D
 	_check(flight != null, "XROrigin3D must exist")
 	_check(director != null, "BeaverExhibit must exist")
 	_check(planet != null, "Planet01 must exist")
+	_check(ship_visual != null, "visible spacecraft must exist")
+	_check(
+		left_controller != null and right_controller != null
+		and left_controller.pose == &"aim" and right_controller.pose == &"aim",
+		"trigger firing uses calibrated OpenXR aim poses (left=%s right=%s)" % [
+			left_controller.pose if left_controller != null else &"missing",
+			right_controller.pose if right_controller != null else &"missing",
+		]
+	)
 	if flight == null or director == null or planet == null:
 		_finish()
 		return
 	_check(is_equal_approx(float(flight.get("arrival_radius")), 5.0), "MIT arrival radius is 5 m")
+
+	# Room-scale head movement must not alter the ship's physics anchor. The
+	# hull, minimap, landing and surface walking all follow XROrigin3D.
+	if xr_camera != null:
+		xr_camera.position = Vector3(1.2, 0.3, -0.8)
+		var anchored: Vector3 = flight.call("get_spacecraft_world_position")
+		_check(
+			anchored.distance_to((flight as Node3D).global_position) < 0.01,
+			"headset room-scale offset cannot separate the player from the ship"
+		)
 
 	# --- spawning ---
 	var total := int(director.call("get_total_count"))
@@ -198,6 +221,10 @@ func _run_checks(scene: Node) -> void:
 	var clearance := Vector2(launched.x, launched.z).distance_to(
 		Vector2(planet.global_position.x, planet.global_position.z))
 	_check(clearance > 5.0, "takeoff exits clear of the planet cross-section (%.2f m)" % clearance)
+	if ship_visual != null:
+		ship_visual.call("_update_heading", Vector2.RIGHT, 2.0)
+		var ship_forward := -(ship_visual as Node3D).global_basis.z.normalized()
+		_check(ship_forward.dot(Vector3.RIGHT) > 0.99, "visible ship turns into its flight direction")
 	await physics_frame
 	_check(int(flight.get("state")) == STATE_FLYING, "takeoff grace prevents instant re-collision")
 	# Firing in flight must add nothing (an absolute count is wrong here:

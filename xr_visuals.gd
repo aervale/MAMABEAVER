@@ -9,7 +9,7 @@ class_name XRControllerVisuals
 
 ## Controller visuals for OpenXR
 
-const EXPECTED_POSE := &"grip"
+const EXPECTED_POSE := &"aim"
 
 @export_node_path("XRController3D") var left_controller: NodePath
 @export_node_path("XRController3D") var right_controller: NodePath
