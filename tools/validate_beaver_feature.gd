@@ -38,6 +38,7 @@ func _run_checks(scene: Node) -> void:
 	var flight := scene.get_node_or_null("XROrigin3D")
 	var director := scene.get_node_or_null("BeaverExhibit")
 	var planet := scene.get_node_or_null("MoonExhibit/Planet01") as Node3D
+	var background_music := scene.get_node_or_null("BackgroundMusic") as AudioStreamPlayer
 	var xr_camera := scene.get_node_or_null("XROrigin3D/XRCamera3D") as XRCamera3D
 	var ship_visual := scene.get_node_or_null("XROrigin3D/Spacecraft") as Node3D
 	var left_controller := scene.get_node_or_null("XROrigin3D/XRControllerLeft") as XRController3D
@@ -45,6 +46,13 @@ func _run_checks(scene: Node) -> void:
 	_check(flight != null, "XROrigin3D must exist")
 	_check(director != null, "BeaverExhibit must exist")
 	_check(planet != null, "Planet01 must exist")
+	_check(
+		background_music != null
+		and background_music.stream is AudioStreamWAV
+		and (background_music.stream as AudioStreamWAV).loop_mode == AudioStreamWAV.LOOP_FORWARD
+		and background_music.playing,
+		"background music loads, plays, and loops"
+	)
 	_check(ship_visual != null, "visible spacecraft must exist")
 	_check(
 		left_controller != null and right_controller != null

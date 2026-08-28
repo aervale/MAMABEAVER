@@ -60,9 +60,12 @@ func _ready() -> void:
 		orb.mesh = mesh
 		orb.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		orb.top_level = true
-		orb.global_position = from_position
 		orb.extra_cull_margin = 60.0
+		# A top-level node has no valid global transform until it enters the
+		# scene tree. Adding it first avoids the !is_inside_tree() error and
+		# guarantees every orb starts at the ship rather than at world origin.
 		add_child(orb)
+		orb.global_position = from_position
 		_orbs.append(orb)
 
 
