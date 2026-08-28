@@ -232,12 +232,25 @@ func _run_checks(scene: Node) -> void:
 	)
 
 	# --- takeoff + grace ---
+	# Give the headset a yaw relative to the already tilted surface rig. The
+	# same WORLD heading must survive leveling; preserving only rig.forward
+	# used to reverse the view after some takeoffs.
+	var view_heading_before_takeoff := Vector2.ZERO
+	if xr_camera != null:
+		xr_camera.rotation = Vector3(0.0, deg_to_rad(63.0), 0.0)
+		view_heading_before_takeoff = flight.call("get_view_heading")
 	flight.call("take_off")
 	_check(int(flight.get("state")) == STATE_FLYING, "B/Y takes off")
 	_check(
 		(flight as Node3D).global_basis.y.dot(Vector3.UP) > 0.999,
 		"takeoff levels the rig back upright for flight"
 	)
+	if xr_camera != null:
+		var view_heading_after_takeoff: Vector2 = flight.call("get_view_heading")
+		_check(
+			view_heading_before_takeoff.dot(view_heading_after_takeoff) > 0.9999,
+			"takeoff preserves the headset's world-facing direction"
+		)
 	var launched: Vector3 = flight.call("get_spacecraft_world_position")
 	_check(absf(launched.y - 10.0) < 0.01, "takeoff returns to the flight plane (y=%.2f)" % launched.y)
 	var clearance := Vector2(launched.x, launched.z).distance_to(

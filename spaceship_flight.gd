@@ -886,14 +886,32 @@ func _align_rig_up(target_up: Vector3, weight: float) -> void:
 	global_position = pivot
 
 
-## Snap back to world-upright, keeping whichever way you were facing.
-func _level_rig() -> void:
-	var forward := -global_basis.z
-	forward.y = 0.0
-	if forward.length() < 0.01:
-		forward = Vector3.FORWARD
+## Snap back to world-upright. During takeoff, `view_heading` is the headset's
+## world-space horizontal look direction captured before leveling. We also
+## account for the headset's local yaw inside the rig; otherwise that yaw gets
+## applied twice and the player can wake up facing back toward the start.
+func _level_rig(view_heading := Vector2.ZERO) -> void:
+	var target_basis: Basis
+	if view_heading.length_squared() > 0.0001 and _flight_camera != null:
+		var desired_forward := Vector3(view_heading.x, 0.0, view_heading.y).normalized()
+		var local_view_forward := -_flight_camera.basis.z
+		local_view_forward.y = 0.0
+		if local_view_forward.length() > 0.01:
+			# R = desired_view_basis * inverse(local_view_basis), so applying R
+			# to the camera's local heading reproduces its pre-takeoff heading.
+			var desired_view_basis := Basis.looking_at(desired_forward, Vector3.UP)
+			var local_view_basis := Basis.looking_at(local_view_forward.normalized(), Vector3.UP)
+			target_basis = desired_view_basis * local_view_basis.inverse()
+		else:
+			target_basis = Basis.looking_at(desired_forward, Vector3.UP)
+	else:
+		var forward := -global_basis.z
+		forward.y = 0.0
+		if forward.length() < 0.01:
+			forward = Vector3.FORWARD
+		target_basis = Basis.looking_at(forward.normalized(), Vector3.UP)
 	var pivot := global_position
-	global_basis = Basis.looking_at(forward.normalized(), Vector3.UP)
+	global_basis = target_basis.orthonormalized()
 	global_position = pivot
 
 
@@ -926,6 +944,9 @@ func take_off() -> void:
 	if state != FlightState.LANDED:
 		return
 	var launch_from := get_spacecraft_world_position()
+	# Capture what the player is looking at BEFORE the tilted surface rig is
+	# leveled. Position changes below do not alter this direction.
+	var view_heading_before_takeoff := get_view_heading()
 	var away := Vector2.RIGHT
 	if _landed_planet != null:
 		var center := _landed_planet.global_position
@@ -951,8 +972,8 @@ func take_off() -> void:
 			)
 
 	# Flight assumes an upright rig (the play field is a horizontal plane),
-	# so undo whatever tilt walking the sphere left behind.
-	_level_rig()
+	# so undo the surface tilt without changing where the headset is facing.
+	_level_rig(view_heading_before_takeoff)
 	_surface_walk_forward = Vector3.ZERO
 	_landing_elapsed = -1.0
 	state = FlightState.FLYING
