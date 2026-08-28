@@ -76,7 +76,7 @@ func _draw() -> void:
 	var collected := 0
 	var total := 0
 	if _beaver_director != null and _beaver_director.has_method("get_total_count"):
-		total = int(_beaver_director.call("get_total_count"))
+		total = _mission_target()
 		collected = int(_beaver_director.call("get_delivered_count")) \
 			+ int(_beaver_director.call("get_cargo_count"))
 	draw_string(
@@ -135,7 +135,7 @@ func _draw_state_lamp(centre: Vector2, accent: Color, state: int) -> void:
 func _draw_beaver_vessel(rect: Rect2) -> void:
 	var ratio := 0.0
 	if _beaver_director != null and _beaver_director.has_method("get_total_count"):
-		var total := maxi(int(_beaver_director.call("get_total_count")), 1)
+		var total := maxi(_mission_target(), 1)
 		var have := int(_beaver_director.call("get_delivered_count")) \
 			+ int(_beaver_director.call("get_cargo_count"))
 		ratio = clampf(float(have) / float(total), 0.0, 1.0)
@@ -306,3 +306,11 @@ func _find_scene_nodes() -> void:
 		return
 	_flight = scene.get_node_or_null("XROrigin3D") as Node3D
 	_beaver_director = scene.get_node_or_null("BeaverExhibit") as Node3D
+
+
+func _mission_target() -> int:
+	if _beaver_director == null:
+		return 0
+	if _beaver_director.has_method("get_required_count"):
+		return int(_beaver_director.call("get_required_count"))
+	return int(_beaver_director.call("get_total_count"))

@@ -563,7 +563,7 @@ func _draw_fuel_bar(map_size: Vector2, footer: float) -> void:
 			Vector2(margin + 2.0, header_y),
 			"BVR %d/%d  CARGO %d" % [
 				int(_beaver_director.call("get_delivered_count")),
-				int(_beaver_director.call("get_total_count")),
+				_mission_target(),
 				int(_beaver_director.call("get_cargo_count")),
 			],
 			HORIZONTAL_ALIGNMENT_LEFT,
@@ -628,6 +628,14 @@ func _beaver_total_for(_planet: Node3D) -> int:
 		return 0
 	var per_planet: Variant = _beaver_director.get("beavers_per_planet")
 	return int(per_planet) if per_planet != null else 0
+
+
+func _mission_target() -> int:
+	if _beaver_director == null:
+		return 0
+	if _beaver_director.has_method("get_required_count"):
+		return int(_beaver_director.call("get_required_count"))
+	return int(_beaver_director.call("get_total_count"))
 
 
 func _fuel_percent() -> float:

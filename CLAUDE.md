@@ -6,7 +6,7 @@ XR rig itself — your head is the ship) through open space, **landing on
 planets to collect beavers with magic bolts and delivering them to the MIT
 Great Dome** at (200, 200). 10 moon-planets (landable when you touch them
 slowly; lethal when fast) and 5 black holes (always lethal) pull you off
-course. Win = all 30 beavers delivered. Play area is (-20, -20) to
+course. Fifty beavers are available; delivering any 20 to MIT wins. Play area is (-20, -20) to
 (220, 220); the backdrop is a procedural starfield sky
 (`starfield_sky.gdshader`) — there is no floor.
 
@@ -31,16 +31,15 @@ plus a fuel tank (thrust burns fuel; empty = coasting), a WAITING state
 (gravity engages only after B/Y so you don't drift into a planet at spawn),
 and an RK4 flow predictor that publishes a projected path + SAFE/IMPACT/GOAL
 verdict the minimap draws. The beaver layer: `beaver_director.gd` (on the
-root `BeaverExhibit` node) spawns 3 `beaver.gd` critters per planet on the
-latitude ring where each sphere crosses the flight plane; slow planet
+root `BeaverExhibit` node) spawns 5 `beaver.gd` critters per planet across
+each sphere; slow planet
 contact = LANDED (snap + refuel), where you can **walk the planet's whole
 sphere** (stick/WASD, mapped through the camera so you move where you look;
 B/Y launches you back into the flight plane clear of the rock) and the trigger/right-click fires
-`magic_bolt.gd` projectiles. Bolts are only *nudged* by gravity
-(`bolt_gravity_scale`, 0.35) so shots go where you aim while still visibly
-curving; at full strength close-range aiming was a lottery. Hit beavers
-tractor aboard as cargo, and reaching MIT banks them (ARRIVED only when all
-are delivered). `surface_dust.gd` puffs on touchdown and while walking.
+`magic_bolt.gd` projectiles. Their gravity scale is currently 0.0 so shots go
+where you aim. Hit beavers tractor aboard as cargo, and reaching MIT banks
+them (ARRIVED after 20 deliveries). `surface_dust.gd` puffs on touchdown and
+while walking.
 Planets (`moon_presenter.gd`) and black holes (`black_hole.gd`) are
 discovered by **duck typing**, not groups: anything under `MoonExhibit` with a
 `target_diameter_meters` property is a planet (gravity `a = C·r³/d²`);
@@ -78,6 +77,7 @@ altitude (`√(R² − dz²)`).
 | `flight_minimap.gd` | Neon HUD tactical map (`_draw()`-based): bodies, flow line, fuel bar, beaver counts, expand-mode info cards. |
 | `beaver_director.gd` / `beaver.gd` | Beaver spawning/mission state; one collectible critter. |
 | `magic_bolt.gd` | Gravity-nudged collection projectile (landed-only). |
+| `game_sfx.gd` | Original procedural firing, collection, deposit, and victory cues. |
 | `surface_dust.gd` | Self-freeing one-shot dust puff (landing + footsteps). |
 | `black_hole_lens.gdshader` | Screen-space gravitational lensing shell (layer 1). |
 | `black_hole_cloud.gdshader` | Translucent swirling gas cloud (layer 2). |

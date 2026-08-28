@@ -25,6 +25,7 @@
 [ext_resource type="AudioStream" path="res://audio/background_music.wav" id="25_bgm"]
 [ext_resource type="Script" path="res://comfort_vignette.gd" id="26_comfort"]
 [ext_resource type="Shader" path="res://comfort_vignette.gdshader" id="27_comfort_shader"]
+[ext_resource type="Script" path="res://game_sfx.gd" id="28_game_sfx"]
 
 [sub_resource type="StandardMaterial3D" id="Material_ship_marker"]
 albedo_color = Color(0.08, 0.75, 1, 1)
@@ -94,6 +95,9 @@ script = ExtResource("1_ig7tw")
 stream = ExtResource("25_bgm")
 volume_db = -10.0
 
+[node name="GameSFX" type="Node" parent="."]
+script = ExtResource("28_game_sfx")
+
 [node name="XROrigin3D" type="XROrigin3D" parent="." unique_id=1033207768]
 transform = Transform3D(-0.70710677, 0, -0.70710677, 0, 1, 0, 0.70710677, 0, -0.70710677, 0, 10, 0)
 script = ExtResource("14_flight")
@@ -106,6 +110,7 @@ desktop_status_path = NodePath("../DesktopHUD/Panel/Content/Mode")
 play_area_min = Vector2(-20, -20)
 play_area_max = Vector2(220, 220)
 beaver_director_path = NodePath("../BeaverExhibit")
+game_sfx_path = NodePath("../GameSFX")
 
 [node name="XRCamera3D" type="XRCamera3D" parent="XROrigin3D" unique_id=807774865]
 
