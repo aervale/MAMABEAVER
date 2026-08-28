@@ -8,12 +8,18 @@ gravity fields and collision volumes of ten planets and five black holes.
 
 - Left or right Quest thumbstick: head-relative horizontal thrust.
 - WASD: desktop thrust for no-headset testing.
+- Quest `B/Y`, or desktop `B/Y`: engage gravity and begin flight from the
+  initial waiting state.
 - A/X, trigger, or desktop `R`: restart after collision, capture, or arrival.
 - Fuel starts at `100` and full thrust consumes `8` units per second.
 - Coasting consumes no fuel; gravity and inertia continue to move the ship.
 - The 3D floor mesh and floor collision are removed for an open-space view.
 - The logical flight boundary remains `X/Y=-20..120` and is enforced in code.
 - The upper-right minimap is shared by desktop and in-headset displays.
+
+At startup and after a reset, the spacecraft is stationary, gravity is not
+applied, and the minimap reports `FLOW READY`. Press `B` or `Y` to engage the
+gravity field; the live ODE prediction and spacecraft motion then begin.
 
 The minimap shows:
 
@@ -81,7 +87,8 @@ startup.
 
 1. Open `project.godot` with Godot 4.7.2 stable.
 2. Press F6/F5.
-3. Use WASD and watch the fuel quantity and predicted flow change.
+3. Press `B` or `Y`, then use WASD and watch the fuel quantity and predicted
+   flow change.
 
 ## Run on Meta Quest 3
 

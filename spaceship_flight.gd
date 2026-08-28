@@ -9,7 +9,12 @@ enum FlightState {
 	FLYING,
 	CRASHED,
 	ARRIVED,
+	WAITING,
 }
+
+const START_BUTTONS: Array[StringName] = [
+	&"by_button",
+]
 
 const RESTART_BUTTONS: Array[StringName] = [
 	&"ax_button",
@@ -59,7 +64,7 @@ const RESTART_BUTTONS: Array[StringName] = [
 @export_range(0.05, 1.0, 0.05) var prediction_update_interval := 0.1
 @export var prediction_holds_current_thrust := true
 
-var state := FlightState.FLYING
+var state := FlightState.WAITING
 var velocity := Vector2.ZERO
 var gravity_acceleration := Vector2.ZERO
 var crash_message := "COLLISION"
@@ -78,6 +83,7 @@ var _obstacles_root: Node3D
 var _black_holes_root: Node3D
 var _vr_status: Label3D
 var _desktop_status: Label
+var _start_was_pressed := false
 var _restart_was_pressed := false
 var _last_flight_input := Vector2.ZERO
 var _prediction_elapsed := 0.0
@@ -98,6 +104,11 @@ func _ready() -> void:
 
 
 func _physics_process(delta: float) -> void:
+	var start_pressed := _is_start_pressed()
+	if start_pressed and not _start_was_pressed and state == FlightState.WAITING:
+		start_flight()
+	_start_was_pressed = start_pressed
+
 	var restart_pressed := _is_restart_pressed()
 	if restart_pressed and not _restart_was_pressed and state != FlightState.FLYING:
 		reset_flight()
@@ -135,7 +146,7 @@ func _physics_process(delta: float) -> void:
 
 
 func reset_flight() -> void:
-	state = FlightState.FLYING
+	state = FlightState.WAITING
 	velocity = Vector2.ZERO
 	gravity_acceleration = Vector2.ZERO
 	crash_message = "COLLISION"
@@ -145,7 +156,19 @@ func reset_flight() -> void:
 	global_position = _logical_to_world(start_position)
 	_update_predicted_flow()
 	_update_status()
-	print("SpacecraftFlight|INFO: flight reset to %s" % start_position)
+	print("SpacecraftFlight|INFO: flight reset to %s; waiting for B/Y" % start_position)
+
+
+func start_flight() -> void:
+	if state != FlightState.WAITING:
+		return
+	state = FlightState.FLYING
+	gravity_acceleration = _calculate_gravity_acceleration()
+	_prediction_elapsed = 0.0
+	_update_predicted_flow()
+	_update_status()
+	_pulse_controllers(0.25, 0.12)
+	print("SpacecraftFlight|INFO: B/Y engaged the gravity field")
 
 
 func _move_spacecraft(delta: float) -> void:
@@ -275,6 +298,10 @@ func _update_predicted_flow() -> void:
 	)
 	predicted_flow_points.append(Vector2(ode_state.x, ode_state.y))
 
+	if state == FlightState.WAITING:
+		predicted_flow_result = "READY"
+		predicted_flow_message = "PRESS B/Y"
+		return
 	if state != FlightState.FLYING:
 		predicted_flow_result = "STOPPED"
 		predicted_flow_message = crash_message if state == FlightState.CRASHED else "DESTINATION"
@@ -399,8 +426,22 @@ func _is_restart_pressed() -> bool:
 	return false
 
 
+func _is_start_pressed() -> bool:
+	if Input.is_key_pressed(KEY_B) or Input.is_key_pressed(KEY_Y):
+		return true
+	for controller in [_left_controller, _right_controller]:
+		if controller == null:
+			continue
+		for action in START_BUTTONS:
+			if controller.is_button_pressed(action):
+				return true
+	return false
+
+
 func _on_controller_button_pressed(action: StringName) -> void:
-	if action in RESTART_BUTTONS and state != FlightState.FLYING:
+	if action in START_BUTTONS and state == FlightState.WAITING:
+		start_flight()
+	elif action in RESTART_BUTTONS and state != FlightState.FLYING:
 		reset_flight()
 
 
@@ -416,6 +457,8 @@ func _update_status() -> void:
 	var distance_left := position_2d.distance_to(Vector2(destination.x, destination.y))
 	var message: String
 	match state:
+		FlightState.WAITING:
+			message = "GRAVITY FIELD DISENGAGED\nPress B or Y to start"
 		FlightState.CRASHED:
 			message = "%s\nPress A/X or trigger to restart" % crash_message
 		FlightState.ARRIVED:
@@ -441,6 +484,10 @@ func _update_status() -> void:
 
 func get_fuel_ratio() -> float:
 	return clampf(fuel / maxf(maximum_fuel, 0.0001), 0.0, 1.0)
+
+
+func is_waiting_to_start() -> bool:
+	return state == FlightState.WAITING
 
 
 func get_predicted_flow_points() -> PackedVector2Array:

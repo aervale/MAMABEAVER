@@ -43,9 +43,25 @@ func _run_checks(scene: Node) -> void:
 	_check(flight.has_method("get_total_gravity_at"), "flight exposes the vector field")
 	_check(flight.has_method("get_predicted_flow_points"), "flight exposes ODE flow samples")
 	_check(flight.has_method("get_fuel_ratio"), "flight exposes fuel ratio")
+	_check(flight.has_method("is_waiting_to_start"), "flight exposes its initial waiting state")
+	_check(bool(flight.call("is_waiting_to_start")), "flight initially waits for B/Y")
+	_check(flight.get("velocity") == Vector2.ZERO, "ship is stationary before B/Y")
+	_check(flight.get("gravity_acceleration") == Vector2.ZERO, "gravity is disengaged before B/Y")
+	_check(
+		String(flight.call("get_predicted_flow_result")) == "READY",
+		"minimap reports READY before B/Y"
+	)
 
 	var gravity: Vector2 = flight.call("get_total_gravity_at", Vector3(0.0, 10.0, 0.0))
 	_check(is_finite(gravity.x) and is_finite(gravity.y), "gravity field is finite")
+
+	flight.call("start_flight")
+	_check(not bool(flight.call("is_waiting_to_start")), "B/Y start transition activates flight")
+	_check(
+		flight.get("gravity_acceleration") is Vector2
+		and (flight.get("gravity_acceleration") as Vector2).length() > 0.0,
+		"starting engages the gravity field"
+	)
 
 	var flow_points: PackedVector2Array = flight.call("get_predicted_flow_points")
 	_check(flow_points.size() >= 2, "RK4 flow contains at least two samples")
@@ -65,6 +81,7 @@ func _run_checks(scene: Node) -> void:
 		is_equal_approx(float(flight.get("fuel")), float(flight.get("maximum_fuel"))),
 		"reset refills fuel"
 	)
+	_check(bool(flight.call("is_waiting_to_start")), "reset returns to B/Y waiting state")
 
 	print(
 		"FlowFeature|INFO: %d RK4 samples, field=(%.3f, %.3f), result=%s"

@@ -353,7 +353,7 @@ text = "Ship: (0, 0, 10)  ·  Goal: (100, 100, 10)"
 [node name="Controls" type="Label" parent="DesktopHUD/Panel/Content" unique_id=156795761]
 layout_mode = 2
 theme_override_colors/font_color = Color(0.66, 0.72, 0.84, 1)
-text = "WASD: fly   ·   Drag: orbit   ·   Wheel: zoom   ·   R: restart   ·   Esc: quit"
+text = "B/Y: start gravity   ·   WASD: fly   ·   R: reset   ·   Esc: quit"
 
 [node name="Credit" type="Label" parent="DesktopHUD/Panel/Content" unique_id=709426833]
 layout_mode = 2
